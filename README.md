@@ -58,6 +58,13 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 docker compose up --build
 ```
 
+### Opción C · solo mirar, sin instalar nada
+
+`demo/estudia-demo.html` es una página suelta que lleva el motor dentro y
+funciona abriéndola con doble clic. Sirve para ver el producto en dos minutos,
+pero es una versión recortada: sin IA, sin OCR, sin cuenta y con la voz del
+dispositivo. El detalle está en [`demo/README.md`](demo/README.md).
+
 ### Comprobar que todo funciona
 
 ```bash
