@@ -346,9 +346,10 @@ export function buildChunks(pages: PageText[], options: ChunkOptions = {}): Chun
           level: pending.level,
           startPage: pending.startPage,
           endPage: Math.max(pending.endPage, base.endPage),
-          // El titulo de la seccion absorbida se conserva como subtitulo,
-          // para que ni la IA ni el motor extractivo pierdan la estructura.
-          content: `${pending.content}\n\n${"#".repeat(Math.min(base.level + 1, 6))} ${base.title}\n\n${base.content}`,
+          // Ambos fragmentos pertenecen al mismo tema (la fusion lo exige),
+          // asi que no se repite el titulo: los subtitulos de cada seccion ya
+          // viajan dentro de su propio contenido.
+          content: `${pending.content}\n\n${base.content}`,
           charCount: 0,
         };
         merged.charCount = merged.content.length;
