@@ -1,0 +1,328 @@
+// Modelo de datos de EstudIA.
+// Base de datos por defecto: SQLite (cero configuracion).
+// Para produccion basta cambiar `provider` a "postgresql" y DATABASE_URL.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Cuenta de usuario. El progreso se sincroniza entre dispositivos por usuario.
+model User {
+  id               String   @id @default(cuid())
+  email            String   @unique
+  name             String
+  passwordHash     String
+  /// ESO | BACHILLERATO | FP | UNIVERSIDAD | OTRO
+  educationLevel   String   @default("UNIVERSIDAD")
+  /// CERO | NORMAL | AVANZADO
+  explanationStyle String   @default("NORMAL")
+  /// RAPIDO | NORMAL | DETALLADO | MUY_DETALLADO
+  summaryDepth     String   @default("DETALLADO")
+  /// Voz preferida para el sintetizador de audio.
+  preferredVoice   String?
+  playbackRate     Float    @default(1)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  subjects  Subject[]
+  documents Document[]
+  progress  StudyProgress[]
+  sessions  StudySession[]
+}
+
+/// Asignatura (nivel 1 de la biblioteca).
+model Subject {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  color     String   @default("#6366f1")
+  emoji     String   @default("📘")
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topics    Topic[]
+  documents Document[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+/// Tema dentro de una asignatura (nivel 2 de la biblioteca).
+model Topic {
+  id        String   @id @default(cuid())
+  subjectId String
+  name      String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  subject   Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  documents Document[]
+
+  @@index([subjectId])
+}
+
+/// Documento PDF subido por el usuario.
+model Document {
+  id            String  @id @default(cuid())
+  userId        String
+  subjectId     String?
+  topicId       String?
+  title         String
+  originalName  String
+  /// Clave en el almacenamiento (local o S3). Nunca es una ruta publica.
+  storageKey    String
+  mimeType      String  @default("application/pdf")
+  sizeBytes     Int
+  pageCount     Int     @default(0)
+  checksum      String?
+
+  /// UPLOADED | EXTRACTING | ANALYZING | SUMMARIZING | OUTLINING | NARRATING | READY | FAILED
+  status        String  @default("UPLOADED")
+  statusMessage String  @default("Subiendo PDF…")
+  progress      Int     @default(0)
+  errorCode     String?
+  errorMessage  String?
+
+  /// Ajustes de generacion elegidos por el usuario para este documento.
+  educationLevel   String @default("UNIVERSIDAD")
+  explanationStyle String @default("NORMAL")
+  summaryDepth     String @default("DETALLADO")
+  language         String @default("es")
+
+  /// Porcentaje de paginas con texto util (0-100). Permite avisar de PDFs escaneados.
+  textCoverage Int     @default(0)
+  usedOcr      Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject  Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  topic    Topic?   @relation(fields: [topicId], references: [id], onDelete: SetNull)
+
+  pages       DocumentPage[]
+  sections    DocumentSection[]
+  summaries   Summary[]
+  outlines    Outline[]
+  audioTracks AudioTrack[]
+  jobs        ProcessingJob[]
+  progressRows StudyProgress[]
+  sessions    StudySession[]
+
+  @@index([userId, createdAt])
+  @@index([subjectId])
+}
+
+/// Texto extraido pagina a pagina. Es la fuente de verdad para las citas "pag. N".
+model DocumentPage {
+  id         String @id @default(cuid())
+  documentId String
+  pageNumber Int
+  text       String
+  charCount  Int    @default(0)
+  /// TEXT | OCR | EMPTY
+  source     String @default("TEXT")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, pageNumber])
+  @@index([documentId])
+}
+
+/// Fragmento logico del documento (capitulo/apartado detectado) usado en el map-reduce.
+model DocumentSection {
+  id         String @id @default(cuid())
+  documentId String
+  position   Int
+  title      String
+  level      Int    @default(1)
+  startPage  Int
+  endPage    Int
+  content    String
+  charCount  Int    @default(0)
+  /// Analisis intermedio (JSON) producido por la fase "map".
+  analysis   String?
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, position])
+}
+
+/// Resumen generado. Se versiona: regenerar crea una version nueva.
+model Summary {
+  id               String  @id @default(cuid())
+  documentId       String
+  depth            String
+  educationLevel   String
+  explanationStyle String
+  markdown         String
+  provider         String
+  model            String
+  version          Int     @default(1)
+  isCurrent        Boolean @default(true)
+  instructions     String?
+  createdAt DateTime @default(now())
+
+  document Document         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sections SummarySection[]
+
+  @@index([documentId, isCurrent])
+}
+
+/// Apartado del resumen, con referencia a las paginas originales del PDF.
+model SummarySection {
+  id        String @id @default(cuid())
+  summaryId String
+  position  Int
+  title     String
+  level     Int    @default(2)
+  markdown  String
+  /// Paginas del PDF de las que procede este apartado (JSON array de enteros).
+  sourcePages String @default("[]")
+  /// Conceptos clave detectados (JSON array de strings).
+  keyConcepts String @default("[]")
+
+  summary Summary @relation(fields: [summaryId], references: [id], onDelete: Cascade)
+
+  @@index([summaryId, position])
+}
+
+/// Esquema jerarquico (arbol serializado en JSON).
+model Outline {
+  id         String  @id @default(cuid())
+  documentId String
+  tree       String
+  provider   String
+  model      String
+  version    Int     @default(1)
+  isCurrent  Boolean @default(true)
+  instructions String?
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, isCurrent])
+}
+
+/// Pista de audio (un capitulo). El guion ya esta adaptado a lenguaje hablado.
+model AudioTrack {
+  id         String @id @default(cuid())
+  documentId String
+  /// SUMMARY | DOCUMENT
+  source     String @default("SUMMARY")
+  position   Int
+  title      String
+  chapter    String?
+  script     String
+  charCount  Int    @default(0)
+  estimatedSeconds Int @default(0)
+  /// PENDING | READY | FAILED  (READY solo cuando hay audio sintetizado en servidor)
+  audioStatus String @default("PENDING")
+  audioKey    String?
+  audioMime   String?
+  durationSeconds Float?
+  provider    String?
+  voice       String?
+  errorMessage String?
+  createdAt   DateTime @default(now())
+
+  document Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  segments AudioSegment[]
+
+  @@index([documentId, position])
+}
+
+/// Frase/parrafo del guion. Permite resaltar el texto sincronizado con el audio.
+model AudioSegment {
+  id        String @id @default(cuid())
+  trackId   String
+  position  Int
+  /// Texto narrado (adaptado a voz).
+  text      String
+  /// Texto original mostrado en pantalla (puede contener formulas).
+  displayText String
+  startChar Int    @default(0)
+  endChar   Int    @default(0)
+  /// Estimacion proporcional; se ajusta cuando se conoce la duracion real.
+  startMs   Int    @default(0)
+  endMs     Int    @default(0)
+  pageNumber Int?
+  summarySectionId String?
+
+  track AudioTrack @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@index([trackId, position])
+}
+
+/// Progreso de estudio por documento (sincronizado entre dispositivos).
+model StudyProgress {
+  id         String @id @default(cuid())
+  userId     String
+  documentId String
+  percent    Int    @default(0)
+  readSeconds Int   @default(0)
+  listenSeconds Int @default(0)
+  /// IDs de apartados completados (JSON array).
+  completedSections String @default("[]")
+  lastTab      String?
+  lastTrackId  String?
+  lastPositionSeconds Float @default(0)
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, documentId])
+  @@index([userId])
+}
+
+/// Sesion de estudio, para las estadisticas semanales del dashboard.
+model StudySession {
+  id         String   @id @default(cuid())
+  userId     String
+  documentId String
+  /// READ | LISTEN
+  kind       String
+  seconds    Int      @default(0)
+  day        String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, day])
+}
+
+/// Cola de trabajos asincronos (procesado de PDF, regeneraciones, sintesis de audio).
+model ProcessingJob {
+  id         String @id @default(cuid())
+  documentId String
+  /// PROCESS_DOCUMENT | REGENERATE_SUMMARY | REGENERATE_OUTLINE | SYNTHESIZE_AUDIO
+  type       String
+  /// QUEUED | RUNNING | DONE | FAILED | CANCELLED
+  status     String @default("QUEUED")
+  stage      String @default("QUEUED")
+  message    String @default("En cola…")
+  progress   Int    @default(0)
+  attempts   Int    @default(0)
+  maxAttempts Int   @default(3)
+  payload    String @default("{}")
+  error      String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([documentId])
+}

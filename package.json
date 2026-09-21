@@ -1,0 +1,42 @@
+{
+  "name": "estudia-pdf",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Plataforma de estudio que convierte PDFs academicos en resumenes, esquemas y audiolibros.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "db:push": "prisma db push",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio",
+    "postinstall": "prisma generate",
+    "test:smoke": "node scripts/smoke-test.mjs",
+    "icons": "node scripts/generate-icons.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0",
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^3.0.3",
+    "jose": "^6.2.12",
+    "next": "^16.3.5",
+    "pdfjs-dist": "^4.10.38",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "prisma": "^6.19.3",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.0"
+  },
+  "optionalDependencies": {
+    "@napi-rs/canvas": "^1.0.9"
+  }
+}

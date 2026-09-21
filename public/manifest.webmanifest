@@ -1,0 +1,24 @@
+{
+  "name": "EstudIA · estudio con PDF",
+  "short_name": "EstudIA",
+  "description": "Convierte tus PDF de clase en resumen, esquema y audiolibro.",
+  "id": "/inicio",
+  "start_url": "/inicio",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#faf9f7",
+  "theme_color": "#5b4bd6",
+  "lang": "es",
+  "dir": "ltr",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Subir PDF", "short_name": "Subir", "url": "/subir" },
+    { "name": "Biblioteca", "short_name": "Biblioteca", "url": "/biblioteca" }
+  ]
+}

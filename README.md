@@ -1,0 +1,198 @@
+# EstudIA
+
+Aplicación web que convierte un PDF de clase (temario, apuntes, un capítulo de
+un libro) en tres recursos de estudio independientes:
+
+| | | |
+|---|---|---|
+| 📚 **Resumen completo** | 🧠 **Esquema de estudio** | 🎧 **Audiolibro** |
+| Sigue el orden del temario, conserva definiciones, fórmulas y datos, y cita la página original de cada apartado. | Árbol jerárquico con conceptos clave y fórmulas, expandible y contraíble. | Guion adaptado a lenguaje hablado, con reproductor persistente y texto sincronizado. |
+
+La prioridad del proyecto, por este orden, es **fidelidad al PDF original**,
+calidad del resumen, estructura del esquema, experiencia de audio, facilidad de
+uso, rendimiento y diseño.
+
+---
+
+## Puesta en marcha
+
+Requisitos: Node.js 20 o superior.
+
+```bash
+npm install                 # instala dependencias y genera el cliente Prisma
+cp .env.example .env        # configura el entorno
+# genera un secreto de sesión y pégalo en AUTH_SECRET
+openssl rand -base64 48
+
+npm run db:push             # crea la base de datos SQLite
+npm run dev                 # http://localhost:3000
+```
+
+Crea una cuenta en `/registro`, sube un PDF y el material aparece en unos
+segundos (o unos minutos, si el documento es largo y hay IA configurada).
+
+### Comprobar que todo funciona
+
+```bash
+npm run build && npm start          # en una terminal
+npm run test:smoke                  # en otra (BASE_URL=http://localhost:3000)
+```
+
+La prueba de humo recorre el flujo completo contra el servidor real: registro,
+rechazo de archivos falsos, subida de un PDF de ejemplo, procesamiento,
+comprobación de que el resumen conserva fórmulas y datos numéricos, esquema
+jerárquico, sincronización de audio, progreso, regeneración de un apartado
+suelto, aislamiento entre cuentas y borrado.
+
+---
+
+## Variables de entorno
+
+Todas se leen **solo en el servidor** (`src/lib/env.ts`). Ninguna clave llega
+nunca al navegador.
+
+| Variable | Obligatoria | Para qué sirve |
+|---|---|---|
+| `DATABASE_URL` | Sí | Conexión a la base de datos. Por defecto SQLite (`file:./dev.db`). |
+| `AUTH_SECRET` | Sí en producción | Firma las cookies de sesión. `openssl rand -base64 48`. |
+| `ANTHROPIC_API_KEY` | No | Activa los resúmenes y esquemas generados con IA y el OCR por visión. Se obtiene en [console.anthropic.com](https://console.anthropic.com/settings/keys). |
+| `AI_MODEL` | No | Modelo usado (por defecto `claude-opus-5`). Puedes bajar el coste con `claude-sonnet-5`. |
+| `TTS_PROVIDER` | No | `none` (voz del dispositivo), `openai` o `elevenlabs`. |
+| `OPENAI_API_KEY`, `OPENAI_TTS_MODEL`, `OPENAI_TTS_VOICE` | Si usas OpenAI | Síntesis de voz en el servidor. |
+| `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` | Si usas ElevenLabs | Síntesis de voz en el servidor. |
+| `STORAGE_DRIVER`, `STORAGE_DIR` | No | Dónde se guardan PDFs y audios (por defecto `./storage`, fuera de `public/`). |
+| `MAX_UPLOAD_MB`, `MAX_PDF_PAGES` | No | Límites de subida (50 MB y 1200 páginas por defecto). |
+| `OCR_PROVIDER` | No | `tesseract` para usar OCR local en vez de visión (requiere `npm i tesseract.js`). |
+
+### Qué ocurre sin claves
+
+La aplicación **funciona igual, con menos calidad**, y lo dice claramente en la
+interfaz:
+
+- **Sin `ANTHROPIC_API_KEY`** entra en *modo extractivo*: el resumen y el
+  esquema se construyen seleccionando frases y títulos literales del propio PDF.
+  No puede alucinar porque no escribe nada nuevo, pero tampoco reescribe ni
+  simplifica las explicaciones.
+- **Sin `TTS_PROVIDER`** el audio se reproduce con la voz integrada del
+  dispositivo (Web Speech API). No requiere ninguna clave, pero no suena con la
+  pantalla bloqueada. Con un proveedor configurado, el audio se sintetiza en el
+  servidor, se guarda y permite reproducción en segundo plano y controles desde
+  la pantalla de bloqueo.
+
+---
+
+## Cómo se procesa un PDF
+
+```
+subida → validación → almacenamiento → cola de trabajos
+   ↓
+1. Extracción de texto por páginas (pdfjs, reconstruyendo líneas y párrafos)
+2. OCR de las páginas escaneadas (render + transcripción)
+3. Detección de estructura: títulos, numeración, capítulos → fragmentos
+4. Fase «map»: se resume cada fragmento por separado
+5. Fase «reduce»: visión global a partir del índice de conceptos
+6. Esquema jerárquico anclado a los títulos reales del PDF
+7. Guiones de audio adaptados a lenguaje hablado, frase a frase
+```
+
+Cada fragmento conserva el rango de páginas del que procede, y el texto que se
+envía al modelo lleva marcas `[[pag. N]]`. Por eso cada apartado del resumen
+puede mostrar «pág. 17» y abrir esa página del PDF original con un toque.
+
+Los documentos largos nunca se envían de una vez: se trocean, se analizan por
+separado y después se sintetizan, que es lo que evita perder información.
+
+### Contrato anti-alucinación
+
+- El modelo solo puede usar el texto que se le entrega; el prompt se lo prohíbe
+  explícitamente, y las reglas se repiten en cada llamada.
+- Lo que el modelo añade de su cosecha va marcado como
+  `> [!aclaracion]` y se pinta en la interfaz con una etiqueta visible
+  («Aclaración añadida (no está en el PDF)»).
+- Lo que no queda claro en el documento se marca como `> [!duda]`.
+- Lo importante para un examen se marca como `> [!examen]`.
+- El número de página citado se valida contra el número real de páginas antes de
+  guardarse.
+- Si una llamada al modelo falla, el fragmento se resuelve en modo extractivo en
+  lugar de dejar el documento a medias.
+
+---
+
+## Arquitectura
+
+```
+src/
+├── app/                        Rutas (Next.js App Router)
+│   ├── (auth)/                 login y registro
+│   ├── (app)/                  panel, biblioteca, subida, documento, ajustes
+│   └── api/                    API REST (auth, documentos, audio, progreso…)
+├── components/                 Interfaz (shell, reproductor, pestañas, markdown)
+└── lib/
+    ├── env.ts  db.ts  auth.ts  api.ts        configuración y sesión
+    ├── storage/                              PDFs y audios (local o S3)
+    ├── pdf/                                  extracción, OCR y estructura
+    ├── ai/                                   prompts, IA y motor extractivo
+    ├── tts/                                  voz, segmentación y duración
+    ├── jobs/                                 cola y pipeline de procesamiento
+    └── client/                               tipos, fetch y formateo
+```
+
+Cada capa está separada a propósito: cambiar de base de datos, de
+almacenamiento, de modelo o de proveedor de voz no obliga a tocar el resto.
+El detalle está en [`docs/arquitectura.md`](docs/arquitectura.md).
+
+### Seguridad
+
+- Contraseñas con bcrypt; sesión en cookie `httpOnly` + `sameSite=lax` firmada
+  con JWT.
+- Los PDFs se validan por su contenido (cabecera `%PDF-`), no por la extensión
+  ni por el tipo declarado, y se avisa si contienen JavaScript embebido.
+- Ni los PDFs ni los audios viven en `public/`: se sirven por rutas que
+  comprueban la sesión y la propiedad del documento.
+- Las claves de almacenamiento se validan para impedir salir del directorio.
+- Todas las rutas de API validan la entrada con Zod y devuelven errores con
+  mensaje en castellano.
+
+---
+
+## Funcionalidades
+
+- **Subida**: arrastrar y soltar o seleccionar, progreso real de subida,
+  cancelación, estados de cada fase y borrado.
+- **Resumen**: cuatro niveles (Rápido, Normal, Detallado, Muy detallado),
+  adaptación al nivel educativo (ESO, Bachillerato, FP, Universidad) y al estilo
+  («desde cero», normal, avanzado).
+- **Esquema**: árbol expandible con conceptos, fórmulas y referencias de página.
+- **Audio**: reproductor tipo audiolibro con ±10 s, capítulo anterior/siguiente,
+  velocidades de 0,75× a 2×, mini-reproductor persistente, controles del sistema
+  y texto sincronizado con salto a cualquier párrafo. Se puede escuchar el
+  resumen, un capítulo, un apartado suelto o **el PDF completo** adaptado a voz.
+- **Biblioteca**: asignaturas → temas → documentos, buscador y ordenación por
+  fecha, nombre, asignatura o progreso.
+- **Progreso**: apartados completados, tiempo leyendo y escuchando, porcentaje
+  por documento y estadísticas semanales. Al guardarse en el servidor, se
+  sincroniza entre dispositivos.
+- **Regeneración**: de todo el resumen, solo del esquema o **de un único
+  apartado** (sin reprocesar el documento entero), con instrucciones libres.
+- **PWA**: instalable, con service worker y caché preparada para escuchar audio
+  descargado sin conexión.
+- **Diseño**: modo claro y oscuro, mobile first, skeleton loaders y
+  microanimaciones.
+
+---
+
+## Producción
+
+- **Base de datos**: cambia `provider` a `postgresql` en
+  `prisma/schema.prisma` y ajusta `DATABASE_URL`. El modelo no cambia.
+- **Almacenamiento**: `src/lib/storage/index.ts` define la interfaz
+  `StorageDriver`; añadir S3/R2 es implementarla y cambiar el export.
+- **Cola**: `src/lib/jobs/queue.ts` es un worker en proceso respaldado por la
+  tabla `ProcessingJob`. Para varias instancias, sustituye `runQueue` por un
+  consumidor de Redis/SQS: el resto del código no cambia.
+- **OCR**: necesita la dependencia opcional `@napi-rs/canvas` (se instala sola) y
+  una clave de IA o `tesseract.js`.
+
+## Licencia
+
+Proyecto privado.
