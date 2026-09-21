@@ -13,7 +13,8 @@
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
     "test:smoke": "node scripts/smoke-test.mjs",
-    "icons": "node scripts/generate-icons.mjs"
+    "icons": "node scripts/generate-icons.mjs",
+    "demo": "node scripts/demo.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

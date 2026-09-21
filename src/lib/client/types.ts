@@ -95,8 +95,10 @@ export type AudioTrackDto = {
   durationSeconds: number | null;
   audioStatus: "PENDING" | "READY" | "FAILED";
   charCount: number;
-  script: string;
+  segmentCount: number;
+  /** Vacío en el listado: se piden por pista en /api/audio/[trackId]. */
   segments: AudioSegmentDto[];
+  script?: string;
 };
 
 export type DocumentDetail = {
@@ -127,7 +129,6 @@ export type DocumentDetail = {
     model: string;
     version: number;
     createdAt: string;
-    markdown: string;
     sections: SummarySectionDto[];
   } | null;
   outline: {

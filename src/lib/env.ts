@@ -32,6 +32,8 @@ export const env = {
     apiKey: str("ANTHROPIC_API_KEY"),
     model: str("AI_MODEL", "claude-opus-5"),
     deepModel: str("AI_MODEL_DEEP", str("AI_MODEL", "claude-opus-5")),
+    /** Fragmentos analizados en paralelo. Súbelo si tu cuenta admite más ritmo. */
+    concurrency: Math.min(12, Math.max(1, int("AI_CONCURRENCY", 4))),
     get enabled() {
       return Boolean(str("ANTHROPIC_API_KEY"));
     },
@@ -60,9 +62,10 @@ export const env = {
   },
 
   limits: {
-    maxUploadBytes: int("MAX_UPLOAD_MB", 50) * 1024 * 1024,
-    maxUploadMb: int("MAX_UPLOAD_MB", 50),
-    maxPages: int("MAX_PDF_PAGES", 1200),
+    maxUploadBytes: int("MAX_UPLOAD_MB", 80) * 1024 * 1024,
+    maxUploadMb: int("MAX_UPLOAD_MB", 80),
+    maxPages: int("MAX_PDF_PAGES", 1500),
+    ocrMaxPages: int("OCR_MAX_PAGES", 600),
   },
 } as const;
 

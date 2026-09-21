@@ -25,9 +25,12 @@ export const GET = route(async (_request: Request, { params }: Params) => {
         include: { sections: { orderBy: { position: "asc" } } },
       },
       outlines: { where: { isCurrent: true }, take: 1 },
+      // Los segmentos y los guiones NO se envían aquí: en un temario de
+      // cientos de páginas serían megas de JSON. Se piden por pista en
+      // /api/audio/[trackId] cuando hacen falta.
       audioTracks: {
         orderBy: { position: "asc" },
-        include: { segments: { orderBy: { position: "asc" } } },
+        include: { _count: { select: { segments: true } } },
       },
       progressRows: { where: { userId: user.id }, take: 1 },
     },
@@ -68,7 +71,8 @@ export const GET = route(async (_request: Request, { params }: Params) => {
           model: summary.model,
           version: summary.version,
           createdAt: summary.createdAt,
-          markdown: summary.markdown,
+          // El Markdown completo se descarga aparte (/export): aquí van los
+          // apartados, que es lo que pinta la interfaz.
           sections: summary.sections.map((section) => ({
             id: section.id,
             position: section.position,
@@ -97,16 +101,8 @@ export const GET = route(async (_request: Request, { params }: Params) => {
       durationSeconds: track.durationSeconds,
       audioStatus: track.audioStatus,
       charCount: track.charCount,
-      script: track.script,
-      segments: track.segments.map((segment) => ({
-        id: segment.id,
-        position: segment.position,
-        text: segment.text,
-        startMs: segment.startMs,
-        endMs: segment.endMs,
-        pageNumber: segment.pageNumber,
-        summarySectionId: segment.summarySectionId,
-      })),
+      segmentCount: track._count.segments,
+      segments: [],
     })),
     progress: progress
       ? {

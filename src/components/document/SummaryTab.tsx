@@ -6,6 +6,7 @@
  */
 
 import { Markdown } from "@/components/Markdown";
+import { LazyBlock } from "@/components/ui/LazyBlock";
 import { Icon } from "@/components/ui/Icon";
 import { EmptyState, ProgressBar } from "@/components/ui/Primitives";
 import type { DocumentDetail } from "@/lib/client/types";
@@ -52,6 +53,9 @@ export function SummaryTab({
     ? Math.round((completed.length / summary.sections.length) * 100)
     : 0;
 
+  // En temarios largos se pinta cada apartado al acercarse a la pantalla.
+  const isLong = summary.sections.length > 10;
+
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4">
       <div className="card flex flex-wrap items-center gap-3 p-4">
@@ -72,16 +76,58 @@ export function SummaryTab({
             </span>
           </div>
         </div>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={onRegenerateAll}
-          disabled={regeneratingAll}
-        >
-          <Icon name="refresh" size={15} />
-          {regeneratingAll ? "Regenerando…" : "Regenerar"}
-        </button>
+        <div className="flex items-center gap-2">
+          <a
+            className="btn btn-ghost"
+            href={`/api/documents/${detail.document.id}/export`}
+            download
+            title="Descargar el resumen en Markdown"
+          >
+            <Icon name="upload" size={15} className="rotate-180" />
+            Descargar
+          </a>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={onRegenerateAll}
+            disabled={regeneratingAll}
+          >
+            <Icon name="refresh" size={15} />
+            {regeneratingAll ? "Regenerando…" : "Regenerar"}
+          </button>
+        </div>
       </div>
+
+      {isLong ? (
+        <nav className="card p-4">
+          <p className="mb-2 text-[0.72rem] font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+            Índice del temario · {summary.sections.length} apartados
+          </p>
+          <ol className="max-h-64 space-y-0.5 overflow-y-auto">
+            {summary.sections.map((section, index) => (
+              <li key={section.id}>
+                <a
+                  href={`#seccion-${section.id}`}
+                  className="flex items-center gap-2 rounded-md px-1.5 py-1 text-[0.82rem] transition hover:bg-[var(--surface-hover)]"
+                  style={{
+                    color: completed.includes(section.id)
+                      ? "var(--success)"
+                      : "var(--text-soft)",
+                  }}
+                >
+                  <span className="w-6 shrink-0 text-right text-[0.7rem] opacity-60">
+                    {index + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{section.title}</span>
+                  {completed.includes(section.id) ? (
+                    <Icon name="check" size={13} strokeWidth={3} />
+                  ) : null}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      ) : null}
 
       {summary.provider !== "anthropic" ? (
         <p
@@ -167,7 +213,13 @@ export function SummaryTab({
               </div>
             </div>
 
-            <Markdown markdown={section.markdown} onPageClick={onPageClick} />
+            {isLong ? (
+              <LazyBlock minHeight={Math.min(900, 120 + section.markdown.length / 6)}>
+                <Markdown markdown={section.markdown} onPageClick={onPageClick} />
+              </LazyBlock>
+            ) : (
+              <Markdown markdown={section.markdown} onPageClick={onPageClick} />
+            )}
 
             {section.keyConcepts.length ? (
               <div className="mt-4 flex flex-wrap gap-1.5 border-t pt-3">

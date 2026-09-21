@@ -26,7 +26,8 @@ import {
   useRef,
   useState,
 } from "react";
-import type { AudioTrackDto } from "@/lib/client/types";
+import type { AudioSegmentDto, AudioTrackDto } from "@/lib/client/types";
+import { api } from "@/lib/client/api";
 import { useToast } from "./ToastProvider";
 
 export type PlayerQueue = {
@@ -94,6 +95,10 @@ export function PlayerProvider({
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Los segmentos de cada capítulo se cargan solo cuando hacen falta: un
+  // temario completo tiene miles de frases y no caben en una sola respuesta.
+  const segmentsCache = useRef(new Map<string, AudioSegmentDto[]>());
+
   const track = queue?.tracks[trackIndex] ?? null;
 
   // Referencias para el motor de voz del dispositivo.
@@ -111,6 +116,36 @@ export function PlayerProvider({
       /* sin persistencia */
     }
   }, []);
+
+  /** Carga (una vez) los segmentos de una pista y los refleja en la cola. */
+  const ensureSegments = useCallback(
+    async (trackId: string): Promise<AudioSegmentDto[]> => {
+      const cached = segmentsCache.current.get(trackId);
+      if (cached) return cached;
+
+      try {
+        const data = await api.get<{ track: { segments: AudioSegmentDto[] } }>(
+          `/api/audio/${trackId}`,
+        );
+        const segments = data.track.segments ?? [];
+        segmentsCache.current.set(trackId, segments);
+        setQueue((current) =>
+          current
+            ? {
+                ...current,
+                tracks: current.tracks.map((item) =>
+                  item.id === trackId ? { ...item, segments } : item,
+                ),
+              }
+            : current,
+        );
+        return segments;
+      } catch {
+        return [];
+      }
+    },
+    [],
+  );
 
   /** Duración de referencia de la pista (real si existe, estimada si no). */
   const trackDuration = useCallback(
@@ -214,12 +249,21 @@ export function PlayerProvider({
       startSeconds = 0,
       autoplay = true,
     ) => {
-      const nextTrack = nextQueue.tracks[index];
-      if (!nextTrack) return;
+      const queued = nextQueue.tracks[index];
+      if (!queued) return;
 
       setError(null);
-      setDuration(trackDuration(nextTrack));
+      setDuration(trackDuration(queued));
       setCurrentTime(startSeconds);
+
+      const segments = queued.segments.length
+        ? queued.segments
+        : await ensureSegments(queued.id);
+      const nextTrack: AudioTrackDto = { ...queued, segments };
+
+      // Se adelanta la carga del capítulo siguiente para que el salto sea fluido.
+      const upcoming = nextQueue.tracks[index + 1];
+      if (upcoming && upcoming.segments.length === 0) void ensureSegments(upcoming.id);
 
       if (engine === "server" && audioRef.current) {
         const audio = audioRef.current;
@@ -253,7 +297,7 @@ export function PlayerProvider({
         speakFrom(Math.max(0, segmentIndex), nextTrack);
       }
     },
-    [engine, rate, speakFrom, trackDuration],
+    [engine, ensureSegments, rate, speakFrom, trackDuration],
   );
 
   const playQueue = useCallback(

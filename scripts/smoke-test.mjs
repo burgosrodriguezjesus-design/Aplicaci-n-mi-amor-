@@ -107,10 +107,12 @@ const summary = detail?.summary;
 const outline = detail?.outline;
 const tracks = detail?.tracks ?? [];
 
-check("hay resumen", Boolean(summary?.markdown));
-check("el resumen conserva la estructura del temario", /Ley de Ohm/i.test(summary?.markdown ?? ""));
-check("se conservan las fórmulas", /V = I x R/i.test(summary?.markdown ?? ""));
-check("se conservan los datos numéricos", /230 V/.test(summary?.markdown ?? ""));
+const summaryText = (summary?.sections ?? []).map((section) => section.markdown).join("\n");
+
+check("hay resumen", summaryText.length > 200);
+check("el resumen conserva la estructura del temario", /Ley de Ohm/i.test(summaryText));
+check("se conservan las fórmulas", /V = I x R/i.test(summaryText));
+check("se conservan los datos numéricos", /230 V/.test(summaryText));
 check(
   "cada apartado referencia sus páginas",
   (summary?.sections ?? []).some((section) => section.sourcePages.length > 0),
@@ -122,12 +124,24 @@ check(
 );
 check("hay pistas de audio", tracks.length > 0);
 check(
+  "el detalle no arrastra los segmentos (payload ligero)",
+  tracks.every((track) => (track.segments ?? []).length === 0 && track.segmentCount > 0),
+);
+
+// Los segmentos se piden por pista, como hace el reproductor.
+const loaded = [];
+for (const track of tracks) {
+  const one = await call(`/api/audio/${track.id}`);
+  if (one.body?.track) loaded.push(one.body.track);
+}
+check("se pueden cargar los segmentos de cada pista", loaded.length === tracks.length);
+check(
   "las pistas tienen segmentos sincronizables",
-  tracks.every((track) => track.segments.length > 0),
+  loaded.every((track) => track.segments.length > 0),
 );
 check(
   "las marcas de tiempo son crecientes",
-  tracks.every((track) =>
+  loaded.every((track) =>
     track.segments.every(
       (segment, index) => index === 0 || segment.startMs >= track.segments[index - 1].startMs,
     ),
@@ -135,12 +149,18 @@ check(
 );
 check(
   "la narración traduce las fórmulas a lenguaje hablado",
-  tracks.some((track) => /es igual a/i.test(track.script)),
+  loaded.some((track) => /es igual a/i.test(track.script)),
 );
 check(
   "la narración no arrastra sintaxis Markdown",
-  tracks.every((track) => !/[*#`]|\|/.test(track.script)),
+  loaded.every((track) => !/[*#`]|\|/.test(track.script)),
 );
+
+const exported = await fetch(`${BASE}/api/documents/${documentId}/export`, {
+  headers: { cookie },
+});
+const exportedText = await exported.text();
+check("se puede descargar el resumen en Markdown", exported.status === 200 && exportedText.length > 200);
 
 // 5. Progreso
 console.log("\n5. Progreso");

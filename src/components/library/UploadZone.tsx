@@ -463,6 +463,19 @@ export function UploadZone() {
         </ol>
       </section>
 
+      {phase === "processing" ? (
+        <p
+          className="card p-3 text-[0.82rem]"
+          style={{ background: "var(--accent-soft)", borderColor: "transparent" }}
+        >
+          {status && status.pageCount > 80
+            ? `Es un temario largo (${status.pageCount} páginas): puede tardar varios minutos. `
+            : ""}
+          Puedes cerrar esta pantalla o seguir navegando. El análisis continúa en el
+          servidor y encontrarás el documento en tu biblioteca.
+        </p>
+      ) : null}
+
       {phase === "error" ? (
         <ErrorNotice
           title="No hemos podido procesar el documento"

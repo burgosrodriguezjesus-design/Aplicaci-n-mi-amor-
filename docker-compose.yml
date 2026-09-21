@@ -1,0 +1,25 @@
+services:
+  estudia:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      # Base de datos, PDFs y audios. Borra este volumen para empezar de cero.
+      - estudia-data:/data
+    environment:
+      # ── Opcional ────────────────────────────────────────────────────────
+      # Sin clave de IA la aplicación funciona en modo extractivo: el resumen
+      # y el esquema se construyen con frases literales del PDF.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      AI_MODEL: "${AI_MODEL:-claude-opus-5}"
+      AI_CONCURRENCY: "${AI_CONCURRENCY:-4}"
+      # Voz del servidor: "none" usa la voz del dispositivo (sin claves).
+      TTS_PROVIDER: "${TTS_PROVIDER:-none}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ELEVENLABS_API_KEY: "${ELEVENLABS_API_KEY:-}"
+      MAX_UPLOAD_MB: "${MAX_UPLOAD_MB:-80}"
+      MAX_PDF_PAGES: "${MAX_PDF_PAGES:-1500}"
+    restart: unless-stopped
+
+volumes:
+  estudia-data:

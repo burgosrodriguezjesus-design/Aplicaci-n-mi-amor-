@@ -15,6 +15,7 @@
  */
 import "server-only";
 import { prisma } from "../db";
+import { env } from "../env";
 import { storage } from "../storage";
 import {
   extractPdf,
@@ -23,7 +24,12 @@ import {
   looksLikePdf,
 } from "../pdf/extract";
 import { ocrAvailable, ocrPages } from "../pdf/ocr";
-import { buildChunks, detectHeadings, type Chunk } from "../pdf/structure";
+import {
+  buildChunks,
+  chunkOptionsFor,
+  detectHeadings,
+  type Chunk,
+} from "../pdf/structure";
 import {
   analyzeChunk,
   currentProvider,
@@ -80,6 +86,13 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
     );
   }
 
+  if (extraction.pageCount > env.limits.maxPages) {
+    throw new ProcessingError(
+      "TOO_MANY_PAGES",
+      `El documento tiene ${extraction.pageCount} páginas y el límite configurado es ${env.limits.maxPages}. Divídelo en varios PDF (por ejemplo, por temas) y súbelos por separado.`,
+    );
+  }
+
   await prisma.documentPage.deleteMany({ where: { documentId } });
   await prisma.documentPage.createMany({
     data: extraction.pages.map((page) => ({
@@ -103,19 +116,34 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
 
   if (extraction.scannedPages.length > 0) {
     if (ocrAvailable()) {
+      // Un libro escaneado entero gasta una llamada de visión por página:
+      // el tope evita sorpresas en la factura y en el tiempo de espera.
+      const targets = extraction.scannedPages.slice(0, env.limits.ocrMaxPages);
+      const omitted = extraction.scannedPages.length - targets.length;
+
       await setStatus(
         documentId,
         jobId,
         "EXTRACTING",
-        `Aplicando OCR a ${extraction.scannedPages.length} ${
-          extraction.scannedPages.length === 1 ? "página escaneada" : "páginas escaneadas"
+        `Aplicando OCR a ${targets.length} ${
+          targets.length === 1 ? "página escaneada" : "páginas escaneadas"
         }…`,
         18,
       );
 
+      if (omitted > 0) {
+        await prisma.document.update({
+          where: { id: documentId },
+          data: {
+            errorCode: "OCR_PARTIAL",
+            errorMessage: `El documento tiene ${extraction.scannedPages.length} páginas escaneadas y solo reconocemos las primeras ${targets.length}. Sube el resto en otro PDF o sube el límite con OCR_MAX_PAGES.`,
+          },
+        });
+      }
+
       const results = await ocrPages(
         data,
-        extraction.scannedPages,
+        targets,
         async (done, total) => {
           await setStatus(
             documentId,
@@ -195,25 +223,39 @@ export async function buildSummary(opts: {
   instructions?: string | null;
 }) {
   const { documentId, jobId, chunks, ctx } = opts;
-  const analyses: ChunkAnalysis[] = [];
+  const analyses: ChunkAnalysis[] = new Array(chunks.length);
 
-  for (let i = 0; i < chunks.length; i++) {
-    await setStatus(
-      documentId,
-      jobId,
-      "SUMMARIZING",
-      `Creando resumen — apartado ${i + 1} de ${chunks.length}…`,
-      35 + Math.round(((i + 1) / chunks.length) * 40),
-    );
+  // Los fragmentos se analizan en paralelo (con un tope) para que un temario
+  // completo no tarde horas. El orden del resultado se respeta siempre.
+  const concurrency = Math.max(1, Math.min(env.ai.concurrency, chunks.length));
+  let next = 0;
+  let done = 0;
 
-    const analysis = await analyzeChunk(chunks[i], chunks.length, ctx);
-    analyses.push(analysis);
+  const worker = async () => {
+    for (;;) {
+      const index = next++;
+      if (index >= chunks.length) return;
 
-    await prisma.documentSection.updateMany({
-      where: { documentId, position: chunks[i].position },
-      data: { analysis: JSON.stringify(analysis) },
-    });
-  }
+      const analysis = await analyzeChunk(chunks[index], chunks.length, ctx);
+      analyses[index] = analysis;
+
+      await prisma.documentSection.updateMany({
+        where: { documentId, position: chunks[index].position },
+        data: { analysis: JSON.stringify(analysis) },
+      });
+
+      done += 1;
+      await setStatus(
+        documentId,
+        jobId,
+        "SUMMARIZING",
+        `Creando resumen — apartado ${done} de ${chunks.length}…`,
+        35 + Math.round((done / chunks.length) * 40),
+      );
+    }
+  };
+
+  await Promise.all(Array.from({ length: concurrency }, worker));
 
   await setStatus(documentId, jobId, "SUMMARIZING", "Uniendo el resumen global…", 78);
   const intro = await synthesize(analyses, ctx);
@@ -430,7 +472,8 @@ async function handleProcessDocument(job: {
     pageNumber: page.pageNumber,
     text: page.text,
   }));
-  const chunks = buildChunks(pageTexts);
+  const totalChars = pageTexts.reduce((sum, page) => sum + page.text.length, 0);
+  const chunks = buildChunks(pageTexts, chunkOptionsFor(totalChars));
   const headings = detectHeadings(pageTexts);
 
   if (chunks.length === 0) {

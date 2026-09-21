@@ -41,6 +41,27 @@ const TARGET_CHUNK_CHARS = 9000;
 const MAX_CHUNK_CHARS = 14000;
 const MIN_CHUNK_CHARS = 1200;
 
+export type ChunkOptions = {
+  /** Tamano objetivo de cada fragmento. */
+  targetChars?: number;
+  /** Tamano maximo antes de partir un fragmento. */
+  maxChars?: number;
+};
+
+/**
+ * Calcula el tamano de fragmento para que un temario largo no dispare el
+ * numero de llamadas al modelo. Un documento de 400 paginas no debe generar
+ * cientos de peticiones: los fragmentos crecen hasta mantenerse por debajo
+ * del tope.
+ */
+export function chunkOptionsFor(totalChars: number, maxChunks = 80): ChunkOptions {
+  const target = Math.min(
+    45000,
+    Math.max(TARGET_CHUNK_CHARS, Math.ceil(totalChars / Math.max(1, maxChunks))),
+  );
+  return { targetChars: target, maxChars: Math.round(target * 1.55) };
+}
+
 /**
  * "TEMA 1", "Capitulo IV", "Unidad 3"… La palabra clave debe ir seguida de un
  * numero: sin esa condicion, una frase que empiece por "unidad de tiempo…"
@@ -242,7 +263,9 @@ function linesToContent(lines: TaggedLine[]) {
  * Las secciones demasiado largas se dividen por parrafos; las muy cortas se
  * fusionan con la siguiente para no malgastar llamadas a la IA.
  */
-export function buildChunks(pages: PageText[]): Chunk[] {
+export function buildChunks(pages: PageText[], options: ChunkOptions = {}): Chunk[] {
+  const targetChars = options.targetChars ?? TARGET_CHUNK_CHARS;
+  const maxChars = options.maxChars ?? MAX_CHUNK_CHARS;
   const cleaned = stripRepeatedHeaders(pages);
   const lines = tagLines(cleaned);
   const rawSections = buildRawSections(lines);
@@ -250,29 +273,51 @@ export function buildChunks(pages: PageText[]): Chunk[] {
   const chunks: Chunk[] = [];
   let pending: Chunk | null = null;
 
+  /** Tema al que pertenece lo que se está recorriendo ahora mismo. */
+  let currentChapter: string | null = null;
+  /** Cuántos fragmentos lleva ya cada tema, para numerar las partes. */
+  const titleCounts = new Map<string, number>();
+
   const push = (chunk: Chunk) => {
-    chunks.push({ ...chunk, position: chunks.length, charCount: chunk.content.length });
+    const used = titleCounts.get(chunk.title) ?? 0;
+    titleCounts.set(chunk.title, used + 1);
+    chunks.push({
+      ...chunk,
+      // Un tema largo se reparte en varios fragmentos: se numeran para que el
+      // índice del resumen no muestre diez apartados con el mismo nombre.
+      title: used === 0 ? chunk.title : `${chunk.title} (parte ${used + 1})`,
+      position: chunks.length,
+      charCount: chunk.content.length,
+    });
   };
+
+  const asHeading = (level: number, text: string) =>
+    `${"#".repeat(Math.min(level + 1, 6))} ${text}`;
 
   for (const section of rawSections) {
     let content = linesToContent(section.lines);
     if (!content) continue;
 
-    // Un titulo padre sin cuerpo propio pasa a titular este fragmento, y el
-    // titulo de la seccion se conserva como subtitulo dentro del contenido.
-    let title = section.title;
-    let level = section.level;
-    let prefix = section.prefix;
-
-    if (prefix.length && prefix[0].level < section.level) {
-      title = prefix[0].title;
-      level = prefix[0].level;
-      prefix = prefix.slice(1);
-      content = `${"#".repeat(Math.min(section.level + 1, 6))} ${section.title}\n\n${content}`;
+    // Cada fragmento se titula con el TEMA al que pertenece, no con el
+    // subapartado por el que toque empezar. Todos los titulos intermedios se
+    // conservan como encabezados dentro del contenido.
+    const headings = [...section.prefix];
+    if (section.level > 1) {
+      headings.push({ title: section.title, level: section.level });
     }
 
-    if (prefix.length) {
-      content = `${prefixMarkdown(prefix)}\n\n${content}`;
+    // Solo un titulo de primer nivel cambia el tema en curso.
+    for (const heading of section.prefix) {
+      if (heading.level <= 1) currentChapter = heading.title;
+    }
+    if (section.level <= 1) currentChapter = section.title;
+
+    const title = currentChapter ?? section.title;
+    const level = currentChapter ? 1 : section.level;
+
+    const emitted = headings.filter((heading) => heading.title !== title);
+    if (emitted.length) {
+      content = `${prefixMarkdown(emitted)}\n\n${content}`;
     }
 
     const base: Chunk = {
@@ -285,11 +330,16 @@ export function buildChunks(pages: PageText[]): Chunk[] {
       charCount: content.length,
     };
 
-    // Seccion corta: se acumula para fusionarla con la siguiente.
+    // Seccion corta: se acumula para fusionarla con la siguiente, pero nunca
+    // se mezclan dos temas distintos en el mismo fragmento: el indice del
+    // resumen debe seguir el temario.
     if (base.content.length < MIN_CHUNK_CHARS) {
       if (pending === null) {
         pending = base;
-      } else if (pending.content.length + base.content.length <= MAX_CHUNK_CHARS) {
+      } else if (
+        pending.title === base.title &&
+        pending.content.length + base.content.length <= maxChars
+      ) {
         const merged: Chunk = {
           position: pending.position,
           title: pending.title,
@@ -315,7 +365,7 @@ export function buildChunks(pages: PageText[]): Chunk[] {
       pending = null;
     }
 
-    if (base.content.length <= MAX_CHUNK_CHARS) {
+    if (base.content.length <= maxChars) {
       push(base);
       continue;
     }
@@ -325,7 +375,7 @@ export function buildChunks(pages: PageText[]): Chunk[] {
     let buffer = "";
     let part = 1;
     for (const paragraph of paragraphs) {
-      if (buffer && buffer.length + paragraph.length > TARGET_CHUNK_CHARS) {
+      if (buffer && buffer.length + paragraph.length > targetChars) {
         push({
           ...base,
           title: `${base.title} (parte ${part})`,

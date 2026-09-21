@@ -244,13 +244,14 @@ export function AudioTab({
                   ) : null}
                 </div>
 
-                {/* Texto sincronizado del capítulo en reproducción */}
+                {/* Texto sincronizado del capítulo en reproducción. Los
+                    segmentos los carga el reproductor bajo demanda. */}
                 {isCurrent ? (
                   <div
                     className="max-h-80 overflow-y-auto border-t px-2 py-2"
                     style={{ background: "var(--bg-sunken)" }}
                   >
-                    {track.segments.map((segment, segmentIndex) => (
+                    {(player.track?.segments ?? []).map((segment, segmentIndex) => (
                       <button
                         key={segment.id}
                         ref={segmentIndex === player.segmentIndex ? activeRef : null}
@@ -263,6 +264,11 @@ export function AudioTab({
                         {segment.text}
                       </button>
                     ))}
+                    {(player.track?.segments ?? []).length === 0 ? (
+                      <p className="px-3 py-4 text-sm" style={{ color: "var(--text-muted)" }}>
+                        Cargando el texto del capítulo…
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

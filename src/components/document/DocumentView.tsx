@@ -298,6 +298,21 @@ export function DocumentView({ documentId }: { documentId: string }) {
             </span>
           </div>
           <ProgressBar value={document_.processingProgress} />
+          <p className="text-[0.75rem]" style={{ color: "var(--text-muted)" }}>
+            {document_.pageCount > 80
+              ? `Son ${document_.pageCount} páginas, así que puede tardar varios minutos. `
+              : ""}
+            Puedes salir de esta pantalla: el proceso sigue en el servidor.
+          </p>
+        </div>
+      ) : null}
+
+      {document_.errorCode === "OCR_PARTIAL" && document_.errorMessage ? (
+        <div
+          className="card p-3 text-[0.8rem]"
+          style={{ background: "var(--warning-soft)", borderColor: "transparent" }}
+        >
+          {document_.errorMessage}
         </div>
       ) : null}
 

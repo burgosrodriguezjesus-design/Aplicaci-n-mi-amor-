@@ -14,22 +14,49 @@ uso, rendimiento y diseño.
 
 ---
 
-## Puesta en marcha
+## Cómo probarla
+
+### Opción A · con Node (la más rápida)
 
 Requisitos: Node.js 20 o superior.
 
 ```bash
+git clone -b claude/pdf-study-app-tjq3ok <url-del-repositorio> estudia
+cd estudia
+
 npm install                 # instala dependencias y genera el cliente Prisma
 cp .env.example .env        # configura el entorno
-# genera un secreto de sesión y pégalo en AUTH_SECRET
-openssl rand -base64 48
-
 npm run db:push             # crea la base de datos SQLite
 npm run dev                 # http://localhost:3000
 ```
 
-Crea una cuenta en `/registro`, sube un PDF y el material aparece en unos
-segundos (o unos minutos, si el documento es largo y hay IA configurada).
+Abre <http://localhost:3000>, crea tu cuenta en `/registro` y sube un PDF.
+
+Para no empezar con la pantalla vacía, con el servidor arrancado y en otra
+terminal:
+
+```bash
+npm run demo
+```
+
+Crea la cuenta `demo@estudia.local` (contraseña `estudia1234`), la asignatura
+«Electricidad» y deja un documento ya procesado para curiosear las cuatro
+pestañas.
+
+### Opción B · con Docker
+
+```bash
+docker compose up --build       # http://localhost:3000
+```
+
+La base de datos, los PDFs y los audios quedan en un volumen, así que no se
+pierden al reiniciar. Para usar IA o voz de servidor, exporta las claves antes
+de levantar el contenedor:
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-..."
+docker compose up --build
+```
 
 ### Comprobar que todo funciona
 
@@ -41,8 +68,41 @@ npm run test:smoke                  # en otra (BASE_URL=http://localhost:3000)
 La prueba de humo recorre el flujo completo contra el servidor real: registro,
 rechazo de archivos falsos, subida de un PDF de ejemplo, procesamiento,
 comprobación de que el resumen conserva fórmulas y datos numéricos, esquema
-jerárquico, sincronización de audio, progreso, regeneración de un apartado
-suelto, aislamiento entre cuentas y borrado.
+jerárquico, carga de segmentos de audio, progreso, regeneración de un apartado
+suelto, descarga en Markdown, aislamiento entre cuentas y borrado.
+
+## Temarios completos
+
+La aplicación está pensada para documentos largos, no para dos folios:
+
+| Documento | Fragmentos | Procesado sin IA | Payload al abrirlo |
+|---|---|---|---|
+| 3 páginas | 1 | 2 s | 40 KB |
+| 56 páginas | 9 | 3 s | 200 KB |
+| 393 páginas | 70 | 4 s | 816 KB |
+
+Cómo se consigue:
+
+- **Un fragmento por tema.** Nunca se mezclan dos temas en el mismo apartado
+  del resumen, así que el índice se lee igual que el temario original. Los
+  temas muy largos se parten en «parte 2», «parte 3»…
+- **Tamaño de fragmento adaptativo.** Los fragmentos crecen en documentos
+  enormes para que el número de llamadas al modelo no se dispare.
+- **Análisis en paralelo.** `AI_CONCURRENCY` (4 por defecto) reduce el tiempo
+  de un temario de 400 páginas de media hora larga a unos minutos.
+- **Procesado en segundo plano.** Puedes cerrar la pestaña: el trabajo sigue en
+  el servidor y el documento aparece listo en la biblioteca.
+- **Respuestas ligeras.** Al abrir un documento no se descargan ni los guiones
+  ni las miles de frases del audio: cada capítulo pide las suyas al
+  reproducirse.
+- **Render perezoso.** Los apartados del resumen se pintan al acercarse a la
+  pantalla, y hay un índice para saltar a cualquiera.
+- **Topes configurables.** `MAX_PDF_PAGES` (1500) y `OCR_MAX_PAGES` (600) evitan
+  que un escaneo gigante se coma el presupuesto sin avisar.
+
+Con IA configurada, el tiempo depende del modelo y de la concurrencia. Como
+referencia, un temario de 400 páginas son unos 70 fragmentos; con
+`AI_CONCURRENCY=4` suele rondar los diez o quince minutos.
 
 ---
 
@@ -61,7 +121,9 @@ nunca al navegador.
 | `OPENAI_API_KEY`, `OPENAI_TTS_MODEL`, `OPENAI_TTS_VOICE` | Si usas OpenAI | Síntesis de voz en el servidor. |
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` | Si usas ElevenLabs | Síntesis de voz en el servidor. |
 | `STORAGE_DRIVER`, `STORAGE_DIR` | No | Dónde se guardan PDFs y audios (por defecto `./storage`, fuera de `public/`). |
-| `MAX_UPLOAD_MB`, `MAX_PDF_PAGES` | No | Límites de subida (50 MB y 1200 páginas por defecto). |
+| `AI_CONCURRENCY` | No | Fragmentos analizados en paralelo (4 por defecto). |
+| `MAX_UPLOAD_MB`, `MAX_PDF_PAGES` | No | Límites de subida (80 MB y 1500 páginas por defecto). |
+| `OCR_MAX_PAGES` | No | Tope de páginas escaneadas a las que se aplica OCR (600). |
 | `OCR_PROVIDER` | No | `tesseract` para usar OCR local en vez de visión (requiere `npm i tesseract.js`). |
 
 ### Qué ocurre sin claves
@@ -190,6 +252,9 @@ El detalle está en [`docs/arquitectura.md`](docs/arquitectura.md).
 - **Cola**: `src/lib/jobs/queue.ts` es un worker en proceso respaldado por la
   tabla `ProcessingJob`. Para varias instancias, sustituye `runQueue` por un
   consumidor de Redis/SQS: el resto del código no cambia.
+- **Dónde desplegar**: necesita un proceso Node de larga vida (Docker, Railway,
+  Render, Fly o un VPS). En plataformas puramente *serverless* el procesado en
+  segundo plano se corta al devolver la respuesta HTTP.
 - **OCR**: necesita la dependencia opcional `@napi-rs/canvas` (se instala sola) y
   una clave de IA o `tesseract.js`.
 
