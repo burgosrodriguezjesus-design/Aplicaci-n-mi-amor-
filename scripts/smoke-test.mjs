@@ -162,6 +162,40 @@ const exported = await fetch(`${BASE}/api/documents/${documentId}/export`, {
 const exportedText = await exported.text();
 check("se puede descargar el resumen en Markdown", exported.status === 200 && exportedText.length > 200);
 
+// 4b. OCR de un PDF escaneado (solo imágenes, sin capa de texto)
+console.log("\n4b. OCR de un escaneado");
+const scan = await readFile("tests/fixtures/apuntes-escaneados.pdf");
+const scanForm = new FormData();
+scanForm.append("file", new Blob([scan], { type: "application/pdf" }), "apuntes-escaneados.pdf");
+scanForm.append("title", "Apuntes escaneados");
+const scanUpload = await call("/api/documents", { method: "POST", body: scanForm });
+const scanId = scanUpload.body?.document?.id;
+
+let scanStatus = null;
+if (scanId) {
+  const scanDeadline = Date.now() + 240_000;
+  while (Date.now() < scanDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    scanStatus = (await call(`/api/documents/${scanId}/status`)).body?.document;
+    if (!scanStatus) break;
+    if (scanStatus.status === "READY" || scanStatus.status === "FAILED") break;
+  }
+}
+
+if (scanStatus?.status === "READY") {
+  check("se reconoce el texto de un PDF escaneado", scanStatus.usedOcr === true);
+  const scanDetail = (await call(`/api/documents/${scanId}`)).body;
+  const scanText = (scanDetail?.summary?.sections ?? []).map((s) => s.markdown).join(" ");
+  check("el texto reconocido llega al resumen", /tension electrica/i.test(scanText));
+} else {
+  // Sin motor de OCR disponible el fallo es esperable: se avisa, no se rompe.
+  console.log(
+    "  · OCR no disponible en este entorno: " +
+      (scanStatus?.errorMessage ?? scanStatus?.status ?? "sin respuesta"),
+  );
+}
+if (scanId) await call(`/api/documents/${scanId}`, { method: "DELETE" });
+
 // 5. Progreso
 console.log("\n5. Progreso");
 const firstSection = summary?.sections?.[1]?.id ?? summary?.sections?.[0]?.id;

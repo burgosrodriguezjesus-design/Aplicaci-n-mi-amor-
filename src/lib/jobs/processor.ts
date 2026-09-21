@@ -14,6 +14,9 @@
  * mostrar en todo momento qué está ocurriendo.
  */
 import "server-only";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { prisma } from "../db";
 import { env } from "../env";
 import { storage } from "../storage";
@@ -23,7 +26,7 @@ import {
   PdfProtectedError,
   looksLikePdf,
 } from "../pdf/extract";
-import { ocrAvailable, ocrPages } from "../pdf/ocr";
+import { ocrAvailable, ocrEngineLabel, ocrPages } from "../pdf/ocr";
 import {
   buildChunks,
   chunkOptionsFor,
@@ -125,7 +128,7 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
         documentId,
         jobId,
         "EXTRACTING",
-        `Aplicando OCR a ${targets.length} ${
+        `Aplicando ${ocrEngineLabel()} a ${targets.length} ${
           targets.length === 1 ? "página escaneada" : "páginas escaneadas"
         }…`,
         18,
@@ -141,10 +144,15 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
         });
       }
 
-      const results = await ocrPages(
-        data,
-        targets,
-        async (done, total) => {
+      // El rasterizado necesita el PDF en disco: se deja en un temporal y se
+      // borra al terminar, pase lo que pase.
+      const workDir = await mkdtemp(path.join(os.tmpdir(), "estudia-ocr-"));
+      const pdfPath = path.join(workDir, "documento.pdf");
+      let results: Awaited<ReturnType<typeof ocrPages>> = [];
+
+      try {
+        await writeFile(pdfPath, data);
+        results = await ocrPages(pdfPath, targets, async (done, total) => {
           await setStatus(
             documentId,
             jobId,
@@ -152,8 +160,10 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
             `Reconociendo texto de imágenes (${done}/${total})…`,
             18 + Math.round((done / total) * 12),
           );
-        },
-      );
+        });
+      } finally {
+        await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
+      }
 
       for (const result of results) {
         usedOcr = true;
@@ -189,8 +199,8 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
     throw new ProcessingError(
       "NO_TEXT",
       ocrAvailable()
-        ? "No hemos podido extraer texto de estas páginas. El documento parece ser solo imágenes y el reconocimiento no ha devuelto nada."
-        : "No hemos podido extraer texto de estas páginas: el PDF parece escaneado y no hay ningún motor de OCR configurado. Añade ANTHROPIC_API_KEY para activar el reconocimiento de texto.",
+        ? "No hemos podido extraer texto de estas páginas. El documento es solo imágenes y el reconocimiento no ha devuelto nada legible: prueba con un escaneo de más calidad o más recto."
+        : "No hemos podido extraer texto de estas páginas: el PDF es solo imágenes y no hay ningún motor de reconocimiento disponible. Instala la dependencia opcional con `npm install tesseract.js` (no necesita ninguna clave) o configura ANTHROPIC_API_KEY.",
     );
   }
 

@@ -1,78 +1,238 @@
 /**
- * OCR para paginas escaneadas.
+ * OCR para páginas escaneadas.
  *
- * Flujo: la pagina se rasteriza con pdfjs + @napi-rs/canvas y la imagen se
- * transcribe. Dos motores posibles:
+ * Flujo: la página se rasteriza a PNG y la imagen se transcribe. Hay dos
+ * motores y se elige el mejor disponible:
  *
- *  1. `anthropic` (por defecto si hay ANTHROPIC_API_KEY): transcripcion con
- *     modelo de vision. Prompt estricto de "transcribe, no interpretes".
- *  2. `tesseract`: motor local. Requiere instalar la dependencia opcional
- *     `tesseract.js` (`npm i tesseract.js`) y descarga los datos del idioma
- *     la primera vez.
+ *  1. `tesseract` — local y gratuito. Se usa por defecto si la dependencia
+ *     opcional `tesseract.js` está instalada (lo está con `npm install`).
+ *     La primera vez descarga los datos del idioma y los guarda en disco.
+ *  2. `anthropic` — transcripción con modelo de visión. Mejor con escaneos
+ *     malos o manuscritos, pero consume una llamada por página. Se usa si no
+ *     hay tesseract, o si se fuerza con OCR_PROVIDER="anthropic".
  *
- * Si no hay ningun motor disponible el documento sigue adelante y las paginas
- * afectadas se marcan como vacias, avisando al usuario con un mensaje claro.
+ * El rasterizado se ejecuta en un proceso aparte (scripts/raster-worker.mjs)
+ * porque la librería nativa de dibujo puede caerse con algunos PDF, y un fallo
+ * así tumbaría el servidor entero.
  */
 import "server-only";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
 import { env } from "../env";
-import { loadPdfjs } from "./pdfjs";
+
+const run = promisify(execFile);
 
 export type OcrResult = { pageNumber: number; text: string; engine: string };
 
-let canvasModule: typeof import("@napi-rs/canvas") | null | undefined;
+export type OcrEngine = "tesseract" | "anthropic" | "none";
 
-async function loadCanvas() {
-  if (canvasModule !== undefined) return canvasModule;
+/** Páginas rasterizadas de una vez. Acota memoria y espacio en disco. */
+const BATCH_SIZE = 8;
+/** Margen de tiempo por lote (un escaneo grande tarda). */
+const RASTER_TIMEOUT_MS = 120_000;
+
+function moduleAvailable(name: string) {
   try {
-    const mod = await import("@napi-rs/canvas");
-    // pdfjs necesita estos globales del DOM para dibujar texto vectorial.
-    const g = globalThis as Record<string, unknown>;
-    g.Path2D ??= mod.Path2D;
-    g.DOMMatrix ??= mod.DOMMatrix;
-    g.ImageData ??= mod.ImageData;
-    canvasModule = mod;
+    // require.resolve no sobrevive al empaquetado: se busca en node_modules.
+    let dir = process.cwd();
+    for (let depth = 0; depth < 6; depth++) {
+      if (existsSync(path.join(dir, "node_modules", name, "package.json"))) return true;
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
   } catch {
-    canvasModule = null;
+    /* sin acceso al sistema de ficheros */
   }
-  return canvasModule;
+  return false;
 }
 
-/** Rasteriza una pagina del PDF a PNG. Devuelve null si no hay rasterizador. */
+let cachedEngine: OcrEngine | null = null;
+
+/** Motor de OCR que se va a usar realmente. */
+export function ocrEngine(): OcrEngine {
+  if (cachedEngine) return cachedEngine;
+
+  const forced = (process.env.OCR_PROVIDER || "").toLowerCase();
+  if (forced === "none") return (cachedEngine = "none");
+  if (forced === "anthropic" && env.ai.enabled) return (cachedEngine = "anthropic");
+  if (forced === "tesseract") return (cachedEngine = "tesseract");
+
+  if (moduleAvailable("tesseract.js")) return (cachedEngine = "tesseract");
+  if (env.ai.enabled) return (cachedEngine = "anthropic");
+  return (cachedEngine = "none");
+}
+
+export function ocrAvailable(): boolean {
+  return ocrEngine() !== "none";
+}
+
+/** Nombre legible del motor, para los mensajes de la interfaz. */
+export function ocrEngineLabel(): string {
+  const engine = ocrEngine();
+  if (engine === "tesseract") return "reconocimiento local";
+  if (engine === "anthropic") return "reconocimiento con IA";
+  return "sin reconocimiento";
+}
+
+const rasterScript = () => path.join(process.cwd(), "scripts", "raster-worker.mjs");
+
+/**
+ * Rasteriza un grupo de páginas en un proceso aparte.
+ * Devuelve un mapa de número de página a PNG; las páginas que fallen no salen.
+ */
+async function rasterizeBatch(
+  pdfPath: string,
+  pageNumbers: number[],
+  scale: number,
+): Promise<Map<number, Buffer>> {
+  const images = new Map<number, Buffer>();
+  const script = rasterScript();
+  if (!existsSync(script)) return images;
+
+  const outDir = await mkdtemp(path.join(os.tmpdir(), "estudia-raster-"));
+  try {
+    await run(
+      process.execPath,
+      [script, pdfPath, outDir, String(scale), pageNumbers.join(",")],
+      { timeout: RASTER_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
+    );
+    for (const pageNumber of pageNumbers) {
+      const file = path.join(outDir, `p${pageNumber}.png`);
+      if (existsSync(file)) images.set(pageNumber, await readFile(file));
+    }
+  } catch {
+    // El proceso se cayó o agotó el tiempo: estas páginas se quedan sin OCR.
+  } finally {
+    await rm(outDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+  return images;
+}
+
+/** Rasteriza una única página. Devuelve null si no se ha podido. */
 export async function renderPageToPng(
-  data: Buffer,
+  pdfPath: string,
   pageNumber: number,
   scale = 2,
 ): Promise<Buffer | null> {
-  const canvasLib = await loadCanvas();
-  if (!canvasLib) return null;
+  const images = await rasterizeBatch(pdfPath, [pageNumber], scale);
+  return images.get(pageNumber) ?? null;
+}
 
-  const pdfjs = await loadPdfjs();
+/* ── Motor local ────────────────────────────────────────────── */
 
-  const doc = await pdfjs.getDocument({
-    data: new Uint8Array(data),
-    isEvalSupported: false,
-    verbosity: 0,
-  }).promise;
+type TesseractWorker = {
+  recognize: (image: Buffer) => Promise<{ data: { text: string } }>;
+  terminate: () => Promise<unknown>;
+};
 
-  try {
-    const page = await doc.getPage(pageNumber);
-    const viewport = page.getViewport({ scale });
-    const canvas = canvasLib.createCanvas(
-      Math.ceil(viewport.width),
-      Math.ceil(viewport.height),
+/** Tiempo máximo para preparar el motor y para reconocer una página. */
+const WORKER_TIMEOUT_MS = 90_000;
+const RECOGNIZE_TIMEOUT_MS = 120_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Se ha agotado el tiempo: ${label}`)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
     );
-    const ctx = canvas.getContext("2d");
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    // @ts-expect-error los tipos de @napi-rs/canvas y pdfjs no coinciden exactamente
-    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
-    const png = canvas.toBuffer("image/png");
-    page.cleanup();
-    return Buffer.from(png);
-  } finally {
-    await doc.destroy();
+  });
+}
+
+function findPackageDir(name: string): string | null {
+  let dir = process.cwd();
+  for (let depth = 0; depth < 6; depth++) {
+    const candidate = path.join(dir, "node_modules", name);
+    if (existsSync(path.join(candidate, "package.json"))) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+/**
+ * Deja los datos del idioma en una carpeta local y la devuelve.
+ *
+ * Se gestiona aquí a propósito: tesseract.js lanza el fallo de descarga fuera
+ * de la promesa, lo que dejaba el trabajo colgado para siempre. Haciéndolo
+ * nosotros, un problema de red es un error normal y manejable.
+ */
+async function ensureLanguageData(lang: string): Promise<string | null> {
+  if (process.env.OCR_LANG_PATH) return process.env.OCR_LANG_PATH;
+
+  const file = `${lang}.traineddata.gz`;
+
+  // 1. Paquete de datos instalado (`npm install` lo trae para el español).
+  const pkg = findPackageDir(`@tesseract.js-data/${lang}`);
+  if (pkg) {
+    for (const variant of ["4.0.0_best_int", "4.0.0"]) {
+      if (existsSync(path.join(pkg, variant, file))) return path.join(pkg, variant);
+    }
+  }
+
+  // 2. Copia ya descargada en el almacenamiento.
+  const cacheDir = path.resolve(process.cwd(), env.storage.dir, "tessdata");
+  if (existsSync(path.join(cacheDir, file))) return cacheDir;
+
+  // 3. Descarga única, con tiempo máximo y errores manejables.
+  try {
+    const url = `https://cdn.jsdelivr.net/npm/@tesseract.js-data/${lang}/4.0.0_best_int/${file}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+    if (!response.ok) return null;
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length < 1000) return null;
+    await mkdir(cacheDir, { recursive: true });
+    await writeFile(path.join(cacheDir, file), bytes);
+    return cacheDir;
+  } catch {
+    return null;
   }
 }
+
+async function createTesseractWorker(): Promise<TesseractWorker | null> {
+  try {
+    const lang = process.env.OCR_LANGS || "spa";
+    const langPath = await ensureLanguageData(lang);
+    if (!langPath) return null;
+
+    const mod = (await import(/* webpackIgnore: true */ "tesseract.js" as string)) as {
+      createWorker?: (
+        langs: string,
+        oem?: number,
+        options?: Record<string, unknown>,
+      ) => Promise<TesseractWorker>;
+      default?: {
+        createWorker?: (
+          langs: string,
+          oem?: number,
+          options?: Record<string, unknown>,
+        ) => Promise<TesseractWorker>;
+      };
+    };
+    const createWorker = mod.createWorker ?? mod.default?.createWorker;
+    if (!createWorker) return null;
+
+    return await withTimeout(
+      createWorker(lang, 1, {
+        langPath,
+        cachePath: langPath,
+        logger: () => undefined,
+      }),
+      WORKER_TIMEOUT_MS,
+      "preparando el reconocimiento de texto",
+    );
+  } catch {
+    return null;
+  }
+}
+
+/* ── Motor de visión ────────────────────────────────────────── */
 
 async function transcribeWithAnthropic(png: Buffer): Promise<string> {
   const { getAnthropic } = await import("../ai/client");
@@ -83,10 +243,10 @@ async function transcribeWithAnthropic(png: Buffer): Promise<string> {
     model: env.ai.model,
     max_tokens: 4000,
     system:
-      "Eres un sistema de OCR. Transcribes literalmente el texto de una pagina escaneada. " +
-      "No resumes, no interpretas, no anades nada. Conservas titulos, listas, numeracion, " +
-      "formulas y tablas (las tablas en formato Markdown). Si una zona es ilegible escribes [ilegible]. " +
-      "Si la pagina no contiene texto respondes exactamente: [sin texto]",
+      "Eres un sistema de OCR. Transcribes literalmente el texto de una página escaneada. " +
+      "No resumes, no interpretas, no añades nada. Conservas títulos, listas, numeración, " +
+      "fórmulas y tablas (las tablas en formato Markdown). Si una zona es ilegible escribes [ilegible]. " +
+      "Si la página no contiene texto respondes exactamente: [sin texto]",
     messages: [
       {
         role: "user",
@@ -95,7 +255,7 @@ async function transcribeWithAnthropic(png: Buffer): Promise<string> {
             type: "image",
             source: { type: "base64", media_type: "image/png", data: png.toString("base64") },
           },
-          { type: "text", text: "Transcribe literalmente el texto de esta pagina." },
+          { type: "text", text: "Transcribe literalmente el texto de esta página." },
         ],
       },
     ],
@@ -109,57 +269,60 @@ async function transcribeWithAnthropic(png: Buffer): Promise<string> {
   return text === "[sin texto]" ? "" : text;
 }
 
-async function transcribeWithTesseract(png: Buffer): Promise<string> {
-  // Dependencia opcional: solo existe si el usuario la instala.
-  const mod = (await import(
-    /* webpackIgnore: true */ "tesseract.js" as string
-  ).catch(() => null)) as {
-    recognize?: (i: Buffer, l: string) => Promise<{ data: { text: string } }>;
-  } | null;
-  if (!mod?.recognize) throw new Error("tesseract.js no esta instalado");
-  const result = await mod.recognize(png, "spa+eng");
-  return result.data.text.trim();
-}
-
-export function ocrAvailable(): boolean {
-  return env.ai.enabled || process.env.OCR_PROVIDER === "tesseract";
-}
-
 /**
- * Aplica OCR a una lista de paginas. Tolerante a fallos: una pagina que no se
- * puede transcribir no interrumpe el resto del documento.
+ * Aplica OCR a una lista de páginas del PDF indicado.
+ * Tolerante a fallos: una página que no se pueda transcribir no interrumpe el
+ * resto del documento.
+ *
+ * @param pdfPath ruta al PDF en disco (no el buffer: el rasterizado va aparte)
  */
 export async function ocrPages(
-  data: Buffer,
+  pdfPath: string,
   pageNumbers: number[],
   onProgress?: (done: number, total: number) => void | Promise<void>,
 ): Promise<OcrResult[]> {
+  const engine = ocrEngine();
+  if (engine === "none" || pageNumbers.length === 0) return [];
+
   const results: OcrResult[] = [];
-  const preferTesseract = process.env.OCR_PROVIDER === "tesseract";
+  let worker: TesseractWorker | null = null;
+  let done = 0;
 
-  for (let i = 0; i < pageNumbers.length; i++) {
-    const pageNumber = pageNumbers[i];
-    try {
-      const png = await renderPageToPng(data, pageNumber, 2);
-      if (!png) break; // sin rasterizador no tiene sentido seguir
-
-      let text = "";
-      let engine = "";
-      if (preferTesseract) {
-        text = await transcribeWithTesseract(png);
-        engine = "tesseract";
-      } else if (env.ai.enabled) {
-        text = await transcribeWithAnthropic(png);
-        engine = "anthropic-vision";
-      } else {
-        break;
-      }
-
-      if (text) results.push({ pageNumber, text, engine });
-    } catch {
-      /* pagina no transcribible: se deja vacia y se avisa al usuario */
+  try {
+    if (engine === "tesseract") {
+      worker = await createTesseractWorker();
+      if (!worker) return [];
     }
-    await onProgress?.(i + 1, pageNumbers.length);
+
+    for (let start = 0; start < pageNumbers.length; start += BATCH_SIZE) {
+      const batch = pageNumbers.slice(start, start + BATCH_SIZE);
+      const images = await rasterizeBatch(pdfPath, batch, 2);
+
+      for (const pageNumber of batch) {
+        const png = images.get(pageNumber);
+        if (png) {
+          try {
+            const text =
+              engine === "tesseract" && worker
+                ? (
+                    await withTimeout(
+                      worker.recognize(png),
+                      RECOGNIZE_TIMEOUT_MS,
+                      `reconociendo la página ${pageNumber}`,
+                    )
+                  ).data.text.trim()
+                : await transcribeWithAnthropic(png);
+            if (text) results.push({ pageNumber, text, engine });
+          } catch {
+            /* página no transcribible */
+          }
+        }
+        done += 1;
+        await onProgress?.(done, pageNumbers.length);
+      }
+    }
+  } finally {
+    if (worker) await worker.terminate().catch(() => undefined);
   }
 
   return results;

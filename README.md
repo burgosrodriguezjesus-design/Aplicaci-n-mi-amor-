@@ -123,6 +123,8 @@ nunca al navegador.
 | `STORAGE_DRIVER`, `STORAGE_DIR` | No | Dónde se guardan PDFs y audios (por defecto `./storage`, fuera de `public/`). |
 | `AI_CONCURRENCY` | No | Fragmentos analizados en paralelo (4 por defecto). |
 | `MAX_UPLOAD_MB`, `MAX_PDF_PAGES` | No | Límites de subida (80 MB y 1500 páginas por defecto). |
+| `OCR_PROVIDER` | No | `tesseract` (local, sin claves), `anthropic` (visión) o `none`. Por defecto usa el local si está y si no la visión. |
+| `OCR_LANGS`, `OCR_LANG_PATH` | No | Idiomas del OCR local (`spa` por defecto) y carpeta con sus datos. |
 | `OCR_MAX_PAGES` | No | Tope de páginas escaneadas a las que se aplica OCR (600). |
 | `OCR_PROVIDER` | No | `tesseract` para usar OCR local en vez de visión (requiere `npm i tesseract.js`). |
 
@@ -135,6 +137,11 @@ interfaz:
   esquema se construyen seleccionando frases y títulos literales del propio PDF.
   No puede alucinar porque no escribe nada nuevo, pero tampoco reescribe ni
   simplifica las explicaciones.
+- **El OCR no necesita claves.** `npm install` trae el motor local y los datos
+  del español, así que unos apuntes escaneados con el móvil funcionan sin
+  configurar nada. Con `ANTHROPIC_API_KEY` puedes cambiar a reconocimiento por
+  visión (`OCR_PROVIDER="anthropic"`), que aguanta mejor los escaneos torcidos
+  y la letra manuscrita.
 - **Sin `TTS_PROVIDER`** el audio se reproduce con la voz integrada del
   dispositivo (Web Speech API). No requiere ninguna clave, pero no suena con la
   pantalla bloqueada. Con un proveedor configurado, el audio se sintetiza en el
@@ -255,8 +262,11 @@ El detalle está en [`docs/arquitectura.md`](docs/arquitectura.md).
 - **Dónde desplegar**: necesita un proceso Node de larga vida (Docker, Railway,
   Render, Fly o un VPS). En plataformas puramente *serverless* el procesado en
   segundo plano se corta al devolver la respuesta HTTP.
-- **OCR**: necesita la dependencia opcional `@napi-rs/canvas` (se instala sola) y
-  una clave de IA o `tesseract.js`.
+- **OCR**: usa las dependencias opcionales `@napi-rs/canvas` (rasterizado),
+  `tesseract.js` y `@tesseract.js-data/spa`, que `npm install` trae solas. El
+  rasterizado corre en un proceso aparte (`scripts/raster-worker.mjs`): la
+  librería nativa de dibujo puede caerse con ciertos PDF y así un fallo no
+  tumba el servidor.
 
 ## Licencia
 

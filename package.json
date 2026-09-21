@@ -38,6 +38,8 @@
     "typescript": "^5.9.0"
   },
   "optionalDependencies": {
-    "@napi-rs/canvas": "^1.0.9"
+    "@napi-rs/canvas": "^0.1.100",
+    "@tesseract.js-data/spa": "^1.0.0",
+    "tesseract.js": "^7.0.0"
   }
 }
