@@ -9,63 +9,135 @@ sin copiar claves de ningún sitio y **sin configurar ni una variable**.
 
 ---
 
-## Todo en Vercel
+## Todo en Vercel, paso a paso
 
-Hace falta **una sola cosa**: la base de datos. Nada más. Ni almacén de
-ficheros, ni claves que copiar, ni variables que configurar, ni tarjeta.
+Hace falta **una sola cosa**: la base de datos. Ni almacén de ficheros, ni
+claves, ni variables, ni tarjeta. Son unos quince minutos y se puede hacer
+entero desde el móvil.
 
-### El camino corto
+Los nombres de los botones están en inglés porque Vercel está en inglés. Los
+pongo tal cual los vas a ver.
 
-[**→ Publicar en Vercel**](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fburgosrodriguezjesus-design%2FAplicaci-n-mi-amor-&project-name=estudia&repository-name=estudia&stores=%5B%7B%22type%22%3A%22postgres%22%7D%5D)
+### Paso 1 · Crear la cuenta de Vercel
 
-Ese enlace abre Vercel con el repositorio y la base de datos ya preparados.
-Entras con GitHub, le das a **Deploy** y esperas unos minutos.
+1. Abre **[vercel.com](https://vercel.com)**.
+2. Pulsa **Sign Up** (arriba a la derecha).
+3. Elige **Continue with GitHub**.
+4. Entra con tu usuario de GitHub y pulsa **Authorize Vercel** cuando GitHub te
+   lo pida. Eso le da permiso a Vercel para leer tus repositorios.
+5. Te preguntará tu nombre y para qué la usas. Contesta lo que quieras y elige
+   el plan **Hobby**, que es el gratuito.
 
-### Si prefieres hacerlo a mano
+Acabarás en un panel vacío que pone algo como *Let's build something new*.
 
-1. **[vercel.com](https://vercel.com)** → cuenta con GitHub → **Add New →
-   Project** → eliges `Aplicaci-n-mi-amor-`.
-2. Dentro del proyecto, pestaña **Storage** → **Create Database → Postgres**.
-   Vercel la conecta sola.
-3. **Deployments → Redeploy**.
+### Paso 2 · Traer el proyecto
 
-Da igual el orden: si despliegas antes de crear la base de datos, la
-construcción se para y te dice exactamente eso. Creas la base de datos, le das
-a *Redeploy* y ya está.
+1. Pulsa **Add New…** y luego **Project**.
+2. Verás una lista, **Import Git Repository**. Busca
+   **`Aplicaci-n-mi-amor-`** y pulsa **Import** a su derecha.
 
-### Comprobar que está bien
+   *¿No aparece?* Pulsa **Adjust GitHub App Permissions** (o **Configure GitHub
+   App**), y en la página de GitHub que se abre marca el repositorio para darle
+   acceso. Vuelve atrás y ya estará en la lista.
 
-Abre `https://tu-proyecto.vercel.app/api/health`. Debe responder:
+3. Sale la pantalla **Configure Project**. **No toques nada**: el nombre, el
+   *Framework Preset* (*Next.js*) y el resto ya vienen bien.
+4. Pulsa **Deploy**.
+5. Espera. La primera vez tarda entre tres y cinco minutos.
+
+Cuando acabe verás una pantalla de felicitación con una captura del proyecto.
+
+### Paso 3 · Abrirla y ver qué falta
+
+1. Pulsa **Continue to Dashboard**.
+2. Arriba tienes la dirección de tu aplicación, algo como
+   **`estudia-xxxx.vercel.app`**. Ábrela.
+3. Te va a decir: **«Ya está publicada. Solo falta la base de datos»**, con los
+   pasos. Es lo normal: la base de datos se crea ahora.
+
+### Paso 4 · Crear la base de datos
+
+1. Vuelve a la pestaña de Vercel con el panel del proyecto.
+2. Arriba hay una fila de pestañas: *Project, Deployments, Analytics,
+   **Storage**, Settings*. Pulsa **Storage**.
+3. Pulsa **Create Database**.
+4. Elige **Postgres** (puede aparecer como *Neon Postgres* o *Serverless
+   Postgres*: es la misma).
+5. Te pedirá un **nombre** (vale cualquiera, por ejemplo `estudia`) y una
+   **región**: elige la más cercana a ti, por ejemplo *Frankfurt*.
+6. Pulsa **Create** y espera unos segundos.
+7. Si te pregunta a qué proyecto conectarla, elige el tuyo y **Connect**.
+
+No tienes que copiar ninguna clave a ningún sitio. Vercel la conecta sola.
+
+### Paso 5 · Volver a desplegar
+
+La aplicación ya tiene base de datos, pero se construyó antes de que existiera.
+Hay que construirla otra vez:
+
+1. Pestaña **Deployments**.
+2. En el primero de la lista, pulsa el botón de **tres puntos (…)** a su
+   derecha.
+3. Elige **Redeploy** y confirma.
+4. Espera otros dos o tres minutos.
+
+### Paso 6 · Comprobar que está bien
+
+Abre tu dirección seguida de `/api/health`, por ejemplo
+`https://estudia-xxxx.vercel.app/api/health`. Tiene que salir:
 
 ```json
 {"ok":true,"database":{"ok":true},"storage":{"ok":true,"driver":"db"}}
 ```
 
+Si pone `"ok":false`, el texto de al lado dice qué falta.
+
 `driver: "db"` significa que los PDF se guardan dentro de la propia base de
-datos: por eso no hace falta crear un almacén aparte. No son accesibles desde
-ninguna dirección pública; solo salen por la aplicación, con tu sesión.
+datos. Por eso no hace falta crear un almacén aparte, y por eso no son
+accesibles desde ninguna dirección pública: solo salen por la aplicación, con
+tu sesión iniciada.
 
-Si algo dice `"ok":false`, el mensaje al lado dice qué falta.
+### Paso 7 · Crear tu cuenta
 
-### Entrar e instalarla
+1. Abre tu dirección `https://estudia-xxxx.vercel.app`.
+2. Pulsa **Crear cuenta**.
+3. Pon tu nombre, tu correo y una contraseña. Esa cuenta es tuya: nadie más ve
+   tus documentos.
 
-Abre `https://tu-proyecto.vercel.app` y **regístrate**: esa cuenta es tuya y
-nadie más ve tus documentos. Aparecerá abajo un aviso para instalarla. Si lo
-cierras:
+### Paso 8 · Ponerla en la pantalla de inicio
 
-**iPhone y iPad (Safari).** **Compartir** (el cuadrado con la flecha) →
-**Añadir a pantalla de inicio** → **Añadir**. Tiene que ser Safari.
+**iPhone o iPad.** Tiene que ser con **Safari** (desde Chrome en iOS no se
+puede):
 
-**Android (Chrome).** Tres puntos → **Instalar aplicación**.
+1. Con la aplicación abierta, pulsa el botón **Compartir**: el cuadrado con una
+   flecha hacia arriba, abajo en el centro.
+2. Baja en la lista hasta **Añadir a pantalla de inicio**.
+3. Pulsa **Añadir**, arriba a la derecha.
 
-**Ordenador (Chrome o Edge).** El icono de instalar, en la barra de direcciones.
+**Android, con Chrome:** menú de tres puntos → **Instalar aplicación**.
+
+**Ordenador, con Chrome o Edge:** el icono de instalar, a la derecha de la barra
+de direcciones.
+
+Ya tienes el icono. Al abrirlo se ve a pantalla completa, sin barra del
+navegador.
+
+### Paso 9 · Subir tu primer PDF
+
+1. Abre la aplicación desde el icono.
+2. Pulsa **Subir nuevo PDF** y elige el fichero.
+3. Verás las fases: leyendo, extrayendo, detectando el temario, resumen,
+   esquema y audio.
+4. Con un libro escaneado largo, **deja la pantalla abierta**: en Vercel el
+   trabajo avanza por tandas mientras la aplicación está delante. Si la
+   cierras, se para donde iba; al volver a abrir el documento, sigue.
 
 ### ¿Y si algún día subes muchísimos libros?
 
 Guardar los PDF en la base de datos va de sobra para unos apuntes, pero ocupa
 sitio (el plan gratuito da medio giga: unos ocho libros escaneados grandes). Si
-te quedas corto, crea un **Blob** en la misma pestaña *Storage* y la aplicación
-empieza a usarlo sola, sin tocar nada más.
+te quedas corto, entra en **Storage → Create → Blob** y la aplicación empieza a
+usarlo sola, sin tocar nada más.
 
 ## Lo que tienes que saber
 

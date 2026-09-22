@@ -75,9 +75,13 @@ la base de datos. Los PDF se guardan dentro de ella, así que no hace falta
 ningún almacén aparte, ni claves, ni variables, ni tarjeta. Hasta el secreto de
 las sesiones se genera solo.
 
-[**→ Publicar en Vercel**](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fburgosrodriguezjesus-design%2FAplicaci-n-mi-amor-&project-name=estudia&repository-name=estudia&stores=%5B%7B%22type%22%3A%22postgres%22%7D%5D)
+En resumen: importas el repositorio en Vercel, creas la base de datos desde la
+pestaña *Storage* y vuelves a desplegar. Si despliegas antes de crear la base de
+datos no pasa nada: la aplicación abre igual y te dice, con los pasos, lo que
+falta.
 
-El paso a paso, y las otras opciones (Render, tu propio ordenador), están en
+El paso a paso detallado —con el nombre de cada botón—, y las otras opciones
+(Render, tu propio ordenador), están en
 **[`docs/publicar.md`](docs/publicar.md)**.
 
 ### Opción B3 · solo quiero mi material, sin publicar nada

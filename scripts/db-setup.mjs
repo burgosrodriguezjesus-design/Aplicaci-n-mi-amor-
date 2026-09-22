@@ -37,15 +37,18 @@ function ejecutar(orden, args) {
 const url = direccionBaseDeDatos();
 const enVercel = Boolean(process.env.VERCEL);
 
-if (enVercel && !/^postgres(ql)?:\/\//i.test(url)) {
-  console.error(
-    "\n✗ Falta la base de datos.\n\n" +
-      "  En Vercel, un fichero SQLite no sobrevive: cada petición arranca de cero.\n" +
-      "  Crea la base de datos antes de desplegar, desde el panel del proyecto:\n\n" +
+const faltaBaseDeDatos = enVercel && !/^postgres(ql)?:\/\//i.test(url);
+
+if (faltaBaseDeDatos) {
+  // No se corta el despliegue: es mejor que la aplicación llegue a abrirse y
+  // explique lo que falta, a que la primera vez solo se vea un error rojo.
+  console.warn(
+    "\n⚠ Todavía no hay base de datos.\n\n" +
+      "  La aplicación se publicará igual, pero al abrirla te dirá que falta.\n" +
+      "  Para terminar, desde el panel del proyecto:\n\n" +
       "      Storage → Create Database → Postgres\n\n" +
-      "  Vercel añade la variable sola. Después, vuelve a desplegar.\n",
+      "  Vercel añade la variable sola. Después, Deployments → Redeploy.\n",
   );
-  process.exit(1);
 }
 
 process.env.DATABASE_URL = url || "file:./dev.db";
@@ -58,10 +61,14 @@ const pasos = [
 
 for (const [orden, args] of pasos) {
   const codigo = await ejecutar(orden, args);
-  if (codigo !== 0) {
-    console.error(`\n✗ Ha fallado: ${orden} ${args.join(" ")}\n`);
-    process.exit(codigo);
-  }
+  if (codigo === 0) continue;
+
+  // Sin base de datos, `db push` falla por definición: ya se ha avisado y la
+  // aplicación lo explicará al abrirse. Cualquier otro fallo sí corta.
+  if (faltaBaseDeDatos && args.includes("push")) continue;
+
+  console.error(`\n✗ Ha fallado: ${orden} ${args.join(" ")}\n`);
+  process.exit(codigo);
 }
 
-console.log("Base de datos lista.");
+console.log(faltaBaseDeDatos ? "Publicada, pendiente de base de datos." : "Base de datos lista.");

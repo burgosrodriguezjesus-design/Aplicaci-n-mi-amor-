@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { publicCapabilities } from "@/lib/env";
+import { loQueFalta } from "@/lib/setup";
+import { PantallaDeConfiguracion } from "@/components/PantallaDeConfiguracion";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +26,11 @@ const FEATURES = [
 ];
 
 export default async function LandingPage() {
+  // Recién publicada puede faltar la base de datos: mejor explicarlo que
+  // enseñar una pantalla de error que no dice qué hacer.
+  const pendiente = await loQueFalta();
+  if (pendiente) return <PantallaDeConfiguracion motivo={pendiente.motivo} />;
+
   const user = await getCurrentUser();
   if (user) redirect("/inicio");
   const capabilities = publicCapabilities();
