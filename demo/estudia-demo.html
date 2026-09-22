@@ -496,12 +496,15 @@
 
       <div class="row" style="margin-top:10px">
         <button class="secondary small" id="ocrAll">Todo el documento</button>
-        <span class="tiny muted">Va por lotes y puedes pararlo cuando quieras</span>
+        <label class="tiny muted" style="display:flex; align-items:center; gap:6px; cursor:pointer">
+          <input type="checkbox" id="ocrPrecise" style="margin:0">
+          Más preciso (la mitad de rápido)
+        </label>
       </div>
 
       <p class="tiny muted" style="margin:10px 0 0" id="ocrCost">
-        Lo lee Claude con tu propia cuenta, varias páginas por consulta. Un libro entero
-        puede llevar un buen rato: déjalo en marcha y no cierres esta pantalla.
+        Lo lee Claude con tu propia cuenta: ocho páginas por consulta y cuatro consultas
+        a la vez. Puedes pararlo y continuar cuando quieras. Deja esta pantalla abierta.
       </p>
 
       <div id="ocrProgress" class="hidden" style="margin-top:14px">
@@ -1720,7 +1723,7 @@ async function offerOcr(scanned, partial) {
       const limits = await sample.limits().catch(() => null);
       if (limits && limits.images) {
         ocrSample = sample;
-        ocrSample.__maxImages = Math.max(1, Math.min(4, limits.images.maxCount || 1));
+        ocrSample.__maxImages = Math.max(1, Math.min(8, limits.images.maxCount || 1));
       }
     }
   } catch (error) {
@@ -1775,7 +1778,7 @@ function applyOcrText(pageNumber, text) {
 }
 
 /** Un grupo de páginas en una sola consulta. */
-async function ocrBatch(pages) {
+async function ocrBatch(pages, tier) {
   const blobs = [];
   for (const pageNumber of pages) {
     const blob = await pageToBlob(pageNumber);
@@ -1790,7 +1793,7 @@ async function ocrBatch(pages) {
     const answer = await ocrSample(
       OCR_RULES + "\n\nEs la página " + numbers[0] +
         ". Responde solo con la transcripción, sin comentarios.",
-      { images, signal: ocrAbort.signal },
+      { images, signal: ocrAbort.signal, modelTier: tier },
     );
     return applyOcrText(numbers[0], answer.text) ? 1 : 0;
   }
@@ -1804,7 +1807,9 @@ async function ocrBatch(pages) {
 
   let recovered = 0;
   try {
-    const data = await ocrSample.json(prompt, { images, signal: ocrAbort.signal });
+    const data = await ocrSample.json(prompt, {
+      images, signal: ocrAbort.signal, modelTier: tier,
+    });
     const list = Array.isArray(data) ? data : [];
     list.forEach((item, index) => {
       const declared = Number(item && item.pagina);
@@ -1819,7 +1824,7 @@ async function ocrBatch(pages) {
       const answer = await ocrSample(
         OCR_RULES + "\n\nEs la página " + entry.pageNumber +
           ". Responde solo con la transcripción.",
-        { images: [entry.blob], signal: ocrAbort.signal },
+        { images: [entry.blob], signal: ocrAbort.signal, modelTier: tier },
       );
       if (applyOcrText(entry.pageNumber, answer.text)) recovered += 1;
     }
@@ -1840,7 +1845,55 @@ function ocrErrorMessage(code) {
   return "Ha fallado el reconocimiento. Pulsa «Continuar» para seguir donde se quedó.";
 }
 
-/** Reconoce el rango elegido, en lotes y con dos consultas a la vez. */
+/**
+ * Reconoce el rango elegido. Para que un libro entero sea viable:
+ * varias páginas por consulta, cuatro consultas a la vez y el modelo
+ * rápido, que no se para a pensar antes de escribir. Si la cuenta
+ * topa con su límite, baja el ritmo y reintenta en vez de rendirse.
+ */
+const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function procesarCola(lotes, tier, total, onAvance) {
+  let pendientes = lotes.slice();
+  let parado = null;
+  let deseados = 4;
+  let topes = 0;
+  let pausaHasta = 0;
+
+  const carril = async (indice) => {
+    for (;;) {
+      if (ocrAbort.signal.aborted || parado) return;
+      if (indice >= deseados) return;
+      if (Date.now() < pausaHasta) { await esperar(400); continue; }
+
+      const lote = pendientes.shift();
+      if (!lote) return;
+
+      try {
+        await ocrBatch(lote, tier);
+      } catch (error) {
+        const code = (error && error.code) || "";
+        if (code === "cancelled") return;
+        if (code === "rate_limited") {
+          // No se pierde el lote: vuelve a la cola y se baja el ritmo.
+          pendientes.unshift(lote);
+          topes += 1;
+          deseados = Math.max(1, deseados - 1);
+          pausaHasta = Date.now() + 8000 + Math.random() * 6000;
+          if (topes > 8) { parado = "rate_limited"; return; }
+          continue;
+        }
+        parado = code || "error";
+        return;
+      }
+      onAvance();
+    }
+  };
+
+  await Promise.all([0, 1, 2, 3].map(carril));
+  return parado;
+}
+
 async function runOcr() {
   if (!ocrSample || ocrRunning) return;
 
@@ -1855,83 +1908,81 @@ async function runOcr() {
   ocrAbort = new AbortController();
   $("ocrStart").disabled = true;
   $("ocrAll").disabled = true;
+  $("ocrBuild").classList.add("hidden");
   $("ocrProgress").classList.remove("hidden");
   $("ocrPreview").textContent = "";
   $("ocrStatus").textContent = "Preparando…";
 
-  const size = Math.max(1, Math.min(ocrSample.__maxImages || 1, 4));
-  const batches = [];
-  for (let i = 0; i < targets.length; i += size) batches.push(targets.slice(i, i + size));
+  const preciso = $("ocrPrecise") && $("ocrPrecise").checked;
+  const tier = preciso ? "default" : "quick";
+  const size = Math.max(1, Math.min(ocrSample.__maxImages || 1, preciso ? 4 : 8));
 
-  let cursor = 0;
-  let done = 0;
-  let recovered = 0;
-  let stoppedBy = null;
-  const started = Date.now();
+  const lotes = [];
+  for (let i = 0; i < targets.length; i += size) lotes.push(targets.slice(i, i + size));
+
+  const total = targets.length;
+  const inicio = Date.now();
+  let hechas = 0;
 
   const paint = () => {
-    const percent = Math.round((done / targets.length) * 100);
+    const percent = Math.round((hechas / total) * 100);
     $("ocrBar").style.width = percent + "%";
     // La barra grande también avanza: antes se quedaba clavada.
     setProgress(10 + percent * 0.4, state.pageCount + " páginas · reconociendo texto");
 
     let eta = "";
-    if (done > 0 && done < targets.length) {
-      const perPage = (Date.now() - started) / done;
-      const left = Math.round((perPage * (targets.length - done)) / 60000);
-      eta = left >= 1 ? " · quedan unos " + left + " min" : " · queda menos de 1 min";
+    if (hechas > 0 && hechas < total) {
+      const porPagina = (Date.now() - inicio) / hechas;
+      const restan = Math.round((porPagina * (total - hechas)) / 60000);
+      eta = restan >= 1 ? " · quedan unos " + restan + " min" : " · queda menos de 1 min";
     }
-    $("ocrStatus").textContent = "Reconocidas " + done + " de " + targets.length +
-      " páginas" + eta;
+    $("ocrStatus").textContent = "Reconocidas " + hechas + " de " + total + " páginas" + eta;
   };
   paint();
 
-  const worker = async () => {
-    for (;;) {
-      if (ocrAbort.signal.aborted || stoppedBy) return;
-      const batch = batches[cursor++];
-      if (!batch) return;
-      try {
-        const got = await ocrBatch(batch);
-        recovered += got;
-        const first = state.pages.find((p) => p.pageNumber === batch[0]);
-        if (first && first.text) $("ocrPreview").textContent = first.text.slice(0, 300);
-      } catch (error) {
-        const code = (error && error.code) || "";
-        if (code === "cancelled") return;
-        stoppedBy = code || "error";
-        return;
-      }
-      done += batch.length;
-      state.ocrDone = done;
-      paint();
-    }
+  const avance = () => {
+    // Se cuentan las que realmente tienen texto, no las consultas hechas.
+    hechas = total - ocrTargets().length;
+    const ultima = state.pages.find((p) => p.text && p.text.length > 40);
+    if (ultima) $("ocrPreview").textContent = ultima.text.slice(0, 260);
+    paint();
   };
 
-  await Promise.all([worker(), worker()]);
+  let parado = await procesarCola(lotes, tier, total, avance);
+
+  // Segunda pasada: alguna consulta puede devolver el lote incompleto.
+  if (!parado && !ocrAbort.signal.aborted) {
+    const faltan = ocrTargets();
+    if (faltan.length && faltan.length < total) {
+      $("ocrStatus").textContent = "Repasando " + faltan.length +
+        (faltan.length === 1 ? " página que faltaba…" : " páginas que faltaban…");
+      parado = await procesarCola(faltan.map((n) => [n]), tier, total, avance);
+    }
+  }
 
   ocrRunning = false;
   $("ocrProgress").classList.add("hidden");
   $("ocrStart").disabled = false;
   $("ocrAll").disabled = false;
 
-  const pending = ocrTargets().length;
+  const recuperadas = total - ocrTargets().length;
+  const pendientes = ocrTargets().length;
 
-  if (stoppedBy) {
-    $("ocrCost").textContent = ocrErrorMessage(stoppedBy);
+  if (parado) {
+    $("ocrCost").textContent = ocrErrorMessage(parado);
     $("ocrStart").textContent = "Continuar";
-    if (recovered === 0) return;
-  }
-
-  if (recovered === 0) {
-    $("ocrCost").textContent =
-      "No hemos podido reconocer texto en esas páginas. Prueba con otras o con un escaneo de más calidad.";
+    if (recuperadas > 0) $("ocrBuild").classList.remove("hidden");
     return;
   }
 
-  if (pending > 0 && !stoppedBy && ocrAbort.signal.aborted) {
-    // Parado a mano: se ofrece seguir o montar el material con lo que hay.
-    $("ocrCost").textContent = "Parado. Quedan " + pending +
+  if (recuperadas === 0) {
+    $("ocrCost").textContent =
+      "No hemos podido reconocer texto en esas páginas. Prueba con otras o marca «más preciso».";
+    return;
+  }
+
+  if (pendientes > 0 && ocrAbort.signal.aborted) {
+    $("ocrCost").textContent = "Parado. Quedan " + pendientes +
       " páginas por reconocer; puedes continuar o seguir con lo que ya hay.";
     $("ocrStart").textContent = "Continuar";
     $("ocrBuild").classList.remove("hidden");

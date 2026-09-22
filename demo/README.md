@@ -16,12 +16,16 @@ cada página y se la pasa a Claude como imagen usando la capacidad `sample` del
 propio visor de Artifacts, es decir, **con la cuenta de quien mira la página**:
 pide permiso la primera vez.
 
-Puede con un libro entero. Para que sea viable envía **cuatro páginas por
-consulta** y mantiene **dos consultas en vuelo**, así que un libro de 400
-páginas son unas cien consultas en lugar de cuatrocientas. Muestra cuántas
-lleva y el tiempo que queda, se puede parar en cualquier momento y continuar
-después sin perder lo reconocido, y si se agota el límite de la cuenta lo dice
-y espera.
+Puede con un libro entero. Para que sea viable envía **ocho páginas por
+consulta**, mantiene **cuatro consultas en vuelo** y usa el modelo rápido, que
+no se detiene a pensar antes de escribir: un libro de 400 páginas son unas
+cincuenta consultas en lugar de cuatrocientas. Hay una casilla «más preciso»
+que baja a cuatro páginas por consulta y al modelo normal.
+
+Muestra cuántas lleva y el tiempo que queda, se puede parar y continuar sin
+perder lo reconocido, y si la cuenta topa con su límite baja el ritmo y
+reintenta en vez de rendirse. Al terminar repasa automáticamente las páginas
+que alguna consulta haya devuelto incompletas.
 
 La aplicación instalada sigue siendo más rápida y sin coste por página: lo hace
 en el servidor con un motor local.

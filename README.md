@@ -89,6 +89,7 @@ La aplicación está pensada para documentos largos, no para dos folios:
 | 3 páginas | 1 | 2 s | 40 KB |
 | 56 páginas | 9 | 3 s | 200 KB |
 | 393 páginas | 70 | 4 s | 816 KB |
+| 40 páginas escaneadas | 2 | 15 s (con OCR) | — |
 
 Cómo se consigue:
 
@@ -135,6 +136,7 @@ nunca al navegador.
 | `OCR_PROVIDER` | No | `tesseract` (local, sin claves), `anthropic` (visión) o `none`. Por defecto usa el local si está y si no la visión. |
 | `OCR_LANGS`, `OCR_LANG_PATH` | No | Idiomas del OCR local (`spa` por defecto) y carpeta con sus datos. |
 | `OCR_MAX_PAGES` | No | Tope de páginas escaneadas a las que se aplica OCR (600). |
+| `OCR_CONCURRENCY`, `OCR_SCALE` | No | Páginas reconocidas en paralelo y resolución del rasterizado. |
 | `OCR_PROVIDER` | No | `tesseract` para usar OCR local en vez de visión (requiere `npm i tesseract.js`). |
 
 ### Qué ocurre sin claves
@@ -148,7 +150,8 @@ interfaz:
   simplifica las explicaciones.
 - **El OCR no necesita claves.** `npm install` trae el motor local y los datos
   del español, así que unos apuntes escaneados con el móvil funcionan sin
-  configurar nada. Con `ANTHROPIC_API_KEY` puedes cambiar a reconocimiento por
+  configurar nada. Reconoce varias páginas a la vez: un libro de 400 páginas
+  ronda los dos o tres minutos en un equipo de cuatro núcleos. Con `ANTHROPIC_API_KEY` puedes cambiar a reconocimiento por
   visión (`OCR_PROVIDER="anthropic"`), que aguanta mejor los escaneos torcidos
   y la letra manuscrita.
 - **Sin `TTS_PROVIDER`** el audio se reproduce con la voz integrada del
