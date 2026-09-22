@@ -80,6 +80,20 @@ se lo das. Allí el procesado va por tandas, porque cada petición se corta a lo
 El paso a paso, y las otras opciones (Render, tu propio ordenador), están en
 **[`docs/publicar.md`](docs/publicar.md)**.
 
+### Opción B3 · solo quiero mi material, sin publicar nada
+
+Convierte un PDF en material de estudio y lo deja en **un solo fichero HTML**
+que se abre con doble clic o desde el móvil, sin servidor y sin conexión:
+resumen, esquema y audio con la voz del propio dispositivo.
+
+```bash
+npm start &                          # la aplicación, en local
+npm run material -- mi-libro.pdf
+```
+
+Deja junto al PDF un `.html` con las tres pestañas y un `.md` con el resumen en
+texto. Funciona igual con libros escaneados: el reconocimiento va incluido.
+
 ### Opción C · solo mirar, sin instalar nada
 
 `demo/estudia-demo.html` es una página suelta que lleva el motor dentro y
