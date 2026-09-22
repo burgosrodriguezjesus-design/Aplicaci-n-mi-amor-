@@ -10,6 +10,8 @@ node tests/demo/run.mjs              # levanta el servidor y pasa las 4 pruebas
 
 | Prueba | Qué asegura |
 | --- | --- |
+| `estructura.mjs` | Lee el índice del libro, le pone los niveles buenos, cuadra las páginas y no pierde datos con unidades. |
+| `repaso-ia.mjs` | El repaso con Claude reescribe cada apartado sin perder ninguno, y el audio se rehace con el texto nuevo. |
 | `ocr-local.mjs` | Sin puente con Claude, el dispositivo lee el PDF escaneado él solo. |
 | `ocr-fallback.mjs` | Si el visor dice que admite imágenes pero las rechaza, se pasa al motor local sin intervención. |
 | `ocr-claude.mjs` | Cuando Claude sí puede ver imágenes, se usa esa vía (más rápida). |

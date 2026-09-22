@@ -276,6 +276,7 @@
   .lvl-chapter .label { font-weight: 700; font-size: 15px; }
   .lvl-section .label { font-weight: 600; font-size: 14.5px; }
   .lvl-subsection .label { font-weight: 550; font-size: 14px; }
+  .lvl-detail .label { font-weight: 500; font-size: 13.5px; color: var(--ink-soft); }
   .lvl-concept .label { font-size: 13.5px; color: var(--ink-soft); }
   .lvl-formula .label {
     font-family: ui-monospace, Menlo, monospace; font-size: 13px; color: var(--accent);
@@ -564,6 +565,7 @@
           <div class="row" style="gap:6px">
             <span class="badge" id="depthBadge">Detallado</span>
             <span class="badge" id="sectionsBadge">— apartados</span>
+            <span class="badge accent hidden" id="aiBadge">Revisado por Claude</span>
           </div>
           <div class="seg" id="depthSeg2" role="tablist" aria-label="Cambiar el nivel de resumen">
             <button role="tab" data-depth="RAPIDO">Rápido</button>
@@ -573,9 +575,35 @@
           </div>
         </div>
       </div>
+
+      <!-- Repaso con Claude: reescribe apartado a apartado sin inventar nada -->
+      <div class="card pad hidden" id="aiCard" style="margin-bottom:12px">
+        <div class="row" style="justify-content:space-between; gap:10px">
+          <div class="grow" style="min-width:200px">
+            <strong style="font-size:14.5px" id="aiTitle">Revisar y mejorar con Claude</strong>
+            <div class="tiny muted" id="aiHint" style="margin-top:2px">
+              Repasa el temario entero: comprueba la estructura, reescribe cada apartado
+              explicándolo de verdad y marca lo que entra en el examen. Solo con lo que
+              pone el PDF.
+            </div>
+          </div>
+          <div class="row" style="gap:8px; flex:0 0 auto">
+            <button class="ghost small" id="aiStop" style="display:none">Parar</button>
+            <button class="primary" id="aiRun">Revisar el temario</button>
+          </div>
+        </div>
+        <div id="aiProgress" class="hidden" style="margin-top:12px">
+          <div class="row" style="justify-content:space-between; margin-bottom:6px">
+            <span class="small" id="aiStatus">Preparando…</span>
+          </div>
+          <div class="bar"><span id="aiBar"></span></div>
+        </div>
+        <p class="tiny muted hidden" id="aiError" style="margin:10px 0 0"></p>
+      </div>
+
       <div class="card pad hidden" id="indexCard" style="margin-bottom:12px">
-        <strong class="tiny" style="letter-spacing:.06em; text-transform:uppercase; color:var(--ink-muted)">Índice del temario</strong>
-        <ol id="indexList" style="margin:8px 0 0; padding-left:20px; max-height:230px; overflow:auto"></ol>
+        <strong class="tiny" id="indexTitle" style="letter-spacing:.06em; text-transform:uppercase; color:var(--ink-muted)">Índice del temario</strong>
+        <ol id="indexList" style="margin:8px 0 0; padding-left:20px; max-height:300px; overflow:auto"></ol>
       </div>
       <div id="summaryBody" style="display:grid; gap:12px"></div>
     </div>
@@ -693,6 +721,17 @@ if (window.pdfjsLib) {
  * Es lo que conserva títulos, listas y numeración.
  */
 function itemsToText(items) {
+  return itemsToLines(items).map((l) => l.text).join("\n")
+    .replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Igual que arriba, pero conservando la altura y el margen izquierdo de cada
+ * línea. Son las dos pistas que separan un título de un párrafo cuando el PDF
+ * no numera nada: los títulos se imprimen más grandes, y los subapartados
+ * entran más hacia dentro.
+ */
+function itemsToLines(items) {
   const lines = [];
   const tol = 2.5;
   for (const item of items) {
@@ -702,9 +741,10 @@ function itemsToText(items) {
     let line = lines.find((l) => Math.abs(l.y - y) <= tol);
     if (!line) { line = { y, height: h, parts: [] }; lines.push(line); }
     line.height = Math.max(line.height, h);
+    line.font = line.font || item.fontName || "";
     line.parts.push({ x, width: item.width || item.str.length * 4, str: item.str });
   }
-  if (!lines.length) return "";
+  if (!lines.length) return [];
 
   lines.sort((a, b) => b.y - a.y);
   const gaps = [];
@@ -726,10 +766,17 @@ function itemsToText(items) {
     }
     rendered = rendered.replace(/\s+/g, " ").trim();
     if (!rendered) continue;
-    if (i > 0 && lines[i - 1].y - line.y > median * 1.6) out.push("");
-    out.push(rendered);
+    if (i > 0 && lines[i - 1].y - line.y > median * 1.6) {
+      out.push({ text: "", height: 0, x: 0, font: "" });
+    }
+    out.push({
+      text: rendered,
+      height: Math.round(line.height * 10) / 10,
+      x: Math.round(line.parts[0].x),
+      font: line.font || "",
+    });
   }
-  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return out;
 }
 
 async function extractPdf(data, onProgress) {
@@ -738,7 +785,12 @@ async function extractPdf(data, onProgress) {
   for (let n = 1; n <= doc.numPages; n++) {
     const page = await doc.getPage(n);
     const content = await page.getTextContent();
-    pages.push({ pageNumber: n, text: itemsToText(content.items) });
+    const lines = itemsToLines(content.items);
+    pages.push({
+      pageNumber: n,
+      text: lines.map((l) => l.text).join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+      lines,
+    });
     page.cleanup();
     if (onProgress && (n % 5 === 0 || n === doc.numPages)) {
       onProgress(n, doc.numPages);
@@ -754,6 +806,177 @@ const CHAPTER_RE = /^(tema|capitulo|capítulo|unidad|bloque|parte|leccion|lecci�
 const NUMBERED_RE = /^(\d{1,2}(?:\.\d{1,2}){0,3})[.)\-–—]?\s+(.{2,110})$/;
 
 const TARGET_CHUNK = 9000, MAX_CHUNK = 14000, MIN_CHUNK = 1200;
+
+/* ── El índice del propio libro ──────────────────────────────
+   Un temario casi siempre empieza por su índice, y ese índice ya
+   dice los temas, los apartados y en qué página está cada uno.
+   Leerlo es, con diferencia, la forma más fiable de entender la
+   estructura: evita adivinar a partir de mayúsculas y tamaños.  */
+
+const INDICE_TITULO_RE =
+  /^\s*(í|i)ndice\b|^\s*contenidos?\s*$|^\s*sumario\s*$|^\s*tabla\s+de\s+contenidos?/i;
+/** «1.2 La ley de Ohm ............ 17» o «La ley de Ohm    17» */
+const INDICE_LINEA_RE = /^(.{3,150}?)[\s.·•…_–—-]{2,}(\d{1,4})\s*$/;
+const INDICE_LINEA_ESPACIOS_RE = /^(.{3,150}?)\s{2,}(\d{1,4})\s*$/;
+const NUM_PREFIJO_RE = /^(\d{1,2}(?:\.\d{1,2}){0,4})[.)\-–—]?\s+/;
+
+function normalizar(texto) {
+  return (texto || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9ñ ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** ¿Es esta línea una entrada de índice? Devuelve el título y su página. */
+function entradaDeIndice(texto, paginasTotales) {
+  const limpio = texto.trim();
+  if (limpio.length < 5 || limpio.length > 160) return null;
+  const m = INDICE_LINEA_RE.exec(limpio) || INDICE_LINEA_ESPACIOS_RE.exec(limpio);
+  if (!m) return null;
+  const titulo = m[1].replace(/[\s.·•…_–—-]+$/, "").trim();
+  const pagina = parseInt(m[2], 10);
+  if (!titulo || titulo.length < 3) return null;
+  if (normalizar(titulo).replace(/[\d ]/g, "").length < 3) return null;   // solo números
+  if (!pagina || pagina > paginasTotales + 40) return null;
+  return { titulo, pagina };
+}
+
+/** Nivel de una entrada: lo dice su numeración, o la palabra «tema». */
+function nivelDeEntrada(titulo) {
+  if (CHAPTER_RE.test(titulo)) return 1;
+  const num = NUM_PREFIJO_RE.exec(titulo);
+  if (num) return Math.min(num[1].split(".").length, 4);
+  return 0;   // sin pista: se decide al armar el índice
+}
+
+/**
+ * Busca el índice en las primeras páginas (y en cualquier página titulada
+ * «Índice»). Devuelve sus entradas y qué páginas ocupa, para no tratarlas
+ * luego como contenido.
+ */
+function detectarIndice(pages) {
+  const total = pages.length;
+  const ventana = Math.min(total, Math.max(14, Math.ceil(total * 0.12)));
+  const candidatas = [];
+
+  for (const page of pages) {
+    const declarada = page.pageNumber <= ventana ||
+      page.text.split("\n").slice(0, 3).some((l) => INDICE_TITULO_RE.test(l));
+    if (!declarada) continue;
+
+    const lineas = page.text.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lineas.length < 4) continue;
+    const entradas = lineas.map((l) => entradaDeIndice(l, total)).filter(Boolean);
+    const densidad = entradas.length / lineas.length;
+    if (entradas.length >= 4 && densidad >= 0.45) {
+      candidatas.push({ pageNumber: page.pageNumber, entradas });
+    }
+  }
+
+  if (!candidatas.length) return null;
+
+  // Solo el primer bloque seguido de páginas de índice: más adelante, una
+  // página con muchos números suele ser una tabla, no el índice.
+  const bloque = [candidatas[0]];
+  for (let i = 1; i < candidatas.length; i += 1) {
+    if (candidatas[i].pageNumber - bloque[bloque.length - 1].pageNumber <= 2) {
+      bloque.push(candidatas[i]);
+    } else break;
+  }
+
+  const paginas = new Set(bloque.map((c) => c.pageNumber));
+  let entradas = bloque.flatMap((c) => c.entradas);
+  if (entradas.length < 4) return null;
+
+  // Niveles: si nadie los declara, el primero que aparece manda.
+  const conNivel = entradas.map((e) => ({ ...e, nivel: nivelDeEntrada(e.titulo) }));
+  const hayNivel1 = conNivel.some((e) => e.nivel === 1);
+  for (const entrada of conNivel) {
+    if (entrada.nivel === 0) entrada.nivel = hayNivel1 ? 2 : 1;
+  }
+
+  return { paginas, entradas: conNivel };
+}
+
+/**
+ * Las páginas que dice el índice son las impresas en el papel, que casi nunca
+ * coinciden con las del PDF. Se busca de verdad dónde aparece cada título y se
+ * toma el desfase que más se repita.
+ */
+function alinearIndice(indice, pages) {
+  if (!indice) return null;
+  const cuerpo = pages.filter((p) => !indice.paginas.has(p.pageNumber));
+  const normalizadas = cuerpo.map((p) => ({ pageNumber: p.pageNumber, texto: normalizar(p.text) }));
+
+  const desfases = [];
+  for (const entrada of indice.entradas) {
+    const clave = normalizar(entrada.titulo).slice(0, 45);
+    if (clave.length < 10) continue;
+    const encontrada = normalizadas.find((p) => p.texto.includes(clave));
+    if (!encontrada) continue;
+    entrada.paginaPdf = encontrada.pageNumber;
+    desfases.push(encontrada.pageNumber - entrada.pagina);
+  }
+
+  let desfase = 0;
+  if (desfases.length) {
+    const orden = desfases.slice().sort((a, b) => a - b);
+    desfase = orden[Math.floor(orden.length / 2)];
+  }
+  for (const entrada of indice.entradas) {
+    if (!entrada.paginaPdf) {
+      entrada.paginaPdf = Math.min(pages.length, Math.max(1, entrada.pagina + desfase));
+    }
+  }
+  indice.desfase = desfase;
+  indice.encajadas = desfases.length;
+  return indice;
+}
+
+/** Altura de línea típica del cuerpo del texto: la referencia para los títulos. */
+function medirCuerpo(pages) {
+  const alturas = [];
+  for (const page of pages) {
+    for (const linea of page.lines || []) {
+      if (linea.text && linea.height > 0) alturas.push(linea.height);
+    }
+  }
+  if (alturas.length < 20) return null;
+  alturas.sort((a, b) => a - b);
+  return alturas[Math.floor(alturas.length / 2)];
+}
+
+/**
+ * Reúne todo lo que sabemos del documento antes de resumir nada: su índice,
+ * el tamaño del cuerpo de texto y los títulos que el índice confirma.
+ * Es lo que hace que el esquema tenga los niveles del libro y no los que
+ * adivinaría una expresión regular.
+ */
+function leerEstructura(pages) {
+  const indice = alinearIndice(detectarIndice(pages), pages);
+  const cuerpo = medirCuerpo(pages);
+  const confirmados = new Map();
+
+  if (indice) {
+    for (const entrada of indice.entradas) {
+      const clave = normalizar(entrada.titulo);
+      if (clave.length >= 6) confirmados.set(clave, entrada.nivel);
+    }
+  }
+
+  // Si el libro habla de «temas» o «unidades», una numeración «1.» es un
+  // apartado dentro del tema, no un tema. Si no, «1.» es el primer nivel.
+  const hayCapitulos = pages.some((page) =>
+    page.text.split("\n").some((l) => CHAPTER_RE.test(l.trim()) && l.trim().length <= 120)) ||
+    (indice ? indice.entradas.some((e) => CHAPTER_RE.test(e.titulo)) : false);
+
+  return {
+    indice,
+    cuerpo,
+    confirmados,
+    hayCapitulos,
+    paginasIndice: indice ? indice.paginas : new Set(),
+  };
+}
+
 
 function isMostlyUppercase(line) {
   const letters = line.replace(/[^\p{L}]/gu, "");
@@ -789,32 +1012,84 @@ function stripRepeatedHeaders(pages) {
   return pages.map((page) => ({
     pageNumber: page.pageNumber,
     text: page.text.split("\n").filter((l) => !repeated.has(l.trim())).join("\n").trim(),
+    lines: (page.lines || []).filter((l) => !repeated.has((l.text || "").trim())),
   }));
 }
 
-/** Etiqueta cada línea con su página y, si lo es, su nivel de título. */
-function tagLines(pages) {
+/**
+ * Etiqueta cada línea con su página y, si lo es, su nivel de título.
+ *
+ * Decide con todo lo que sabe, en este orden: lo que confirma el índice del
+ * libro, la palabra «tema», una numeración que sigue una secuencia real, el
+ * tamaño de la letra y, ya como último recurso, las mayúsculas. Antes se
+ * fiaba casi solo de lo último, y por eso ascendía frases sueltas a título.
+ */
+function tagLines(pages, contexto) {
+  const ctx = contexto || { confirmados: new Map(), paginasIndice: new Set(), cuerpo: null };
+  const cuerpo = ctx.cuerpo;
   const out = [];
+  const secuencia = new Map();   // profundidad → último número visto
+
+  /** Una numeración vale como título si continúa la serie del documento. */
+  const numeracionCoherente = (token) => {
+    const partes = token.split(".").map((n) => parseInt(n, 10));
+    const profundidad = partes.length;
+    const ultimo = secuencia.get(profundidad);
+    const actual = partes[profundidad - 1];
+    const encaja = ultimo === undefined ? actual <= 3 : actual === ultimo + 1 || actual === ultimo;
+    if (encaja) {
+      secuencia.set(profundidad, actual);
+      for (const clave of [...secuencia.keys()]) if (clave > profundidad) secuencia.delete(clave);
+    }
+    return encaja;
+  };
+
   for (const page of pages) {
-    for (const raw of page.text.split("\n")) {
-      const line = raw.trim();
+    if (ctx.paginasIndice.has(page.pageNumber)) continue;   // el índice no es contenido
+
+    const lineas = page.lines && page.lines.length
+      ? page.lines
+      : page.text.split("\n").map((t) => ({ text: t, height: 0, x: 0 }));
+
+    for (const bruta of lineas) {
+      const line = (bruta.text || "").trim();
+      const alto = bruta.height || 0;
       if (isNoise(line)) {
         if (line === "") out.push({ text: "", pageNumber: page.pageNumber, heading: null });
         continue;
       }
-      let heading = null;
-      const endsLikeSentence = /[.;,]$/.test(line);
 
-      if (CHAPTER_RE.test(line) && line.length <= 120 && !endsLikeSentence) {
+      let heading = null;
+      let origen = "";
+      const terminaEnFrase = /[.;,]$/.test(line);
+      const corta = line.length <= 120;
+      const grande = cuerpo && alto >= cuerpo * 1.14;
+      const muyGrande = cuerpo && alto >= cuerpo * 1.42;
+      const confirmado = ctx.confirmados.get(normalizar(line));
+
+      if (confirmado !== undefined && corta) {
+        heading = confirmado;
+        origen = "indice";
+      } else if (CHAPTER_RE.test(line) && corta && !terminaEnFrase) {
         heading = 1;
-      } else if (endsLikeSentence) {
-        heading = null;
-      } else {
-        const numbered = NUMBERED_RE.exec(line);
-        if (numbered && !/[.:;,]$/.test(numbered[2]) && line.length <= 120) {
-          heading = Math.min(numbered[1].split(".").length + 1, 4);
-        } else if (isMostlyUppercase(line) && line.length <= 90) {
+        origen = "tema";
+      } else if (!terminaEnFrase || grande) {
+        const numerada = NUMBERED_RE.exec(line);
+        if (numerada && !/[.:;,]$/.test(numerada[2]) && corta &&
+            (numeracionCoherente(numerada[1]) || grande)) {
+          const profundidad = numerada[1].split(".").length;
+          heading = Math.min(ctx.hayCapitulos ? profundidad + 1 : profundidad, 5);
+          origen = "numero";
+        } else if (muyGrande && corta && !terminaEnFrase) {
           heading = 1;
+          origen = "tamano";
+        } else if (grande && corta && !terminaEnFrase) {
+          heading = 2;
+          origen = "tamano";
+        } else if (isMostlyUppercase(line) && line.length <= 90 &&
+                   (!cuerpo || alto >= cuerpo * 0.95)) {
+          heading = 1;
+          origen = "mayusculas";
         }
       }
 
@@ -824,7 +1099,7 @@ function tagLines(pages) {
         previous.text.length + line.length <= 140;
       if (continues) { previous.text += " " + line; continue; }
 
-      out.push({ text: line, pageNumber: page.pageNumber, heading });
+      out.push({ text: line, pageNumber: page.pageNumber, heading, origen });
     }
     out.push({ text: "", pageNumber: page.pageNumber, heading: null });
   }
@@ -886,11 +1161,11 @@ function chunkOptionsFor(totalChars, maxChunks) {
  * Trocea el documento. Cada fragmento se titula con el TEMA al que pertenece
  * y nunca mezcla dos temas distintos.
  */
-function buildChunks(pages, options) {
+function buildChunks(pages, options, contexto) {
   const targetChars = (options && options.targetChars) || TARGET_CHUNK;
   const maxChars = (options && options.maxChars) || MAX_CHUNK;
   const cleaned = stripRepeatedHeaders(pages);
-  const rawSections = buildRawSections(tagLines(cleaned));
+  const rawSections = buildRawSections(tagLines(cleaned, contexto));
 
   const chunks = [];
   let pending = null;
@@ -918,10 +1193,17 @@ function buildChunks(pages, options) {
     for (const h of section.prefix) if (h.level <= 1) currentChapter = h.title;
     if (section.level <= 1) currentChapter = section.title;
 
-    const title = currentChapter || section.title;
-    const level = currentChapter ? 1 : section.level;
+    // El resumen se ordena por apartados, no por temas enteros: un tema de
+    // veinte páginas en una sola tarjeta no se estudia. El tema queda delante
+    // para no perder de vista a qué pertenece cada apartado.
+    const propio = section.level > 1 ? section.title : null;
+    const title = currentChapter
+      ? (propio ? currentChapter + " · " + propio : currentChapter)
+      : section.title;
+    const level = currentChapter && !propio ? 1 : section.level;
 
-    const emitted = headings.filter((h) => h.title !== title);
+    // El título del apartado ya encabeza la tarjeta: repetirlo dentro sobra.
+    const emitted = headings.filter((h) => h.title !== title && !title.endsWith(h.title));
     if (emitted.length) {
       content = emitted.map((h) => asHeading(h.level, h.title)).join("\n\n") + "\n\n" + content;
     }
@@ -976,12 +1258,15 @@ function buildChunks(pages, options) {
   return chunks;
 }
 
-function detectHeadings(pages) {
-  const lines = tagLines(stripRepeatedHeaders(pages));
+function detectHeadings(pages, contexto) {
+  const lines = tagLines(stripRepeatedHeaders(pages), contexto);
   const headings = [];
   for (const line of lines) {
     if (line.heading !== null && line.text) {
-      headings.push({ title: line.text, level: line.heading, pageNumber: line.pageNumber });
+      headings.push({
+        title: line.text, level: line.heading,
+        pageNumber: line.pageNumber, origen: line.origen || "",
+      });
     }
   }
   return headings;
@@ -1010,6 +1295,13 @@ const GENERIC_TERMS = new Set(["unidad","unidades","representa","letra","puntos"
 const DEFINITION_RE = /\b(se define como|se denomina|se conoce como|consiste en|es el|es la|es un|es una|son los|son las|se llama|entendemos por|definicion|definición)\b/i;
 const FORMULA_RE = /(^|\s)[A-Za-zα-ω][\w₀-₉]*\s*=\s*[^.;]{2,60}/;
 const IMPORTANT_RE = /\b(importante|fundamental|clave|recuerda|obligatorio|atencion|atención|no confundir|examen|debe|siempre|nunca)\b/i;
+/** Guiones, topos y enumeradores «a)», «1)», «i.» al principio de línea. */
+const VINETA_RE = /^\s*(?:[-–—•·▪o*]\s+|\(?[a-z]\)\s+|\(?\d{1,2}\)\s+|\d{1,2}[.)]\s+(?=[a-záéíóúñ]))/;
+/** Frases que anuncian una clasificación: nunca deberían caerse del resumen. */
+const ENUMERA_RE = /\b(se clasifican|se dividen|se distinguen|tipos de|clases de|consta de|se compone|comprende|existen \w+ tipos|los siguientes|las siguientes)\b/i;
+/** Un dato con unidad o porcentaje: es contenido examinable, no relleno. */
+const DATO_RE =
+  /\d+\s*(?:%|€|ºC|°C|m²|m2|km²)|\d+\s*(?:km|cm|mm|kg|g|s|h|min|V|A|W|kW|MW|Hz|Ω|euros?|años?|días?|meses)\b/;
 
 function stripMarkers(text) {
   return text.replace(PAGE_MARKER, "").replace(/\n{3,}/g, "\n\n").trim();
@@ -1047,6 +1339,17 @@ function toItems(content, fallbackPage) {
       items.push({ kind: "heading", level: heading[1].length, text: heading[2].trim(), index: index++ });
       continue;
     }
+    // Una lista es una lista: si se deshace en frases, el resumen pierde la
+    // enumeración, que es justo lo que se estudia.
+    if (VINETA_RE.test(line)) {
+      flushParagraph();
+      items.push({
+        kind: "list", text: line.replace(VINETA_RE, "").trim(),
+        page, score: 0, index: index++,
+      });
+      continue;
+    }
+
     if (!buffer.length) bufferPage = page;
     buffer.push(line);
   }
@@ -1140,39 +1443,82 @@ function pageLabel(pages) {
   return min === max ? " (pág. " + min + ")" : " (págs. " + min + "-" + max + ")";
 }
 
+/** Lo que no se puede perder aunque puntúe bajo. */
+function imprescindible(texto) {
+  return DEFINITION_RE.test(texto) || FORMULA_RE.test(texto) ||
+    IMPORTANT_RE.test(texto) || ENUMERA_RE.test(texto) || DATO_RE.test(texto);
+}
+
+/** Dos frases que dicen lo mismo con otras comas no valen el doble. */
+function clavePorFrase(texto) {
+  return normalizar(texto).split(" ").slice(0, 14).join(" ");
+}
+
 function summarizeChunk(chunk, depth) {
   const items = toItems(chunk.content, chunk.startPage);
-  const sentences = scoreSentences(items.filter((i) => i.kind === "sentence"));
+  const frases = items.filter((i) => i.kind === "sentence");
+  const listas = items.filter((i) => i.kind === "list");
+  const sentences = scoreSentences(frases);
   const ratio = KEEP_RATIO[depth] || KEEP_RATIO.DETALLADO;
   const keep = Math.max(3, Math.round(sentences.length * ratio));
 
-  const kept = new Set(sentences.slice().sort((a, b) => b.score - a.score).slice(0, keep).map((s) => s.index));
-  const selected = sentences.filter((s) => kept.has(s.index));
+  // Se elige por puntuación, pero definiciones, fórmulas, clasificaciones,
+  // avisos y datos con unidades entran siempre: son lo que se pregunta.
+  const kept = new Set(
+    sentences.slice().sort((a, b) => b.score - a.score).slice(0, keep).map((s) => s.index));
+  for (const frase of sentences) if (imprescindible(frase.text)) kept.add(frase.index);
+  // Las listas se conservan enteras salvo en el resumen más corto.
+  for (const elemento of listas) {
+    if (depth !== "RAPIDO" || imprescindible(elemento.text)) kept.add(elemento.index);
+  }
+
+  // Fuera repeticiones: los temarios repiten la misma frase en cada apartado.
+  const vistas = new Set();
+  for (const item of items) {
+    if (!kept.has(item.index) || item.kind === "heading") continue;
+    const clave = clavePorFrase(item.text);
+    if (clave.length < 12) continue;
+    if (vistas.has(clave)) kept.delete(item.index);
+    else vistas.add(clave);
+  }
+
+  const selected = items.filter((i) => i.kind !== "heading" && kept.has(i.index));
   const pages = [...new Set(selected.map((s) => s.page))].sort((a, b) => a - b);
   const headings = items.filter((i) => i.kind === "heading");
   const concepts = extractKeyConcepts(selected, headings);
-  const formulas = extractFormulas(sentences);
+  const formulas = extractFormulas(frases.concat(listas));
 
   const title = stripMarkers(chunk.title) || "Apartado";
   const body = ["### " + title + pageLabel(pages), ""];
 
-  let currentPage = -1, paragraph = [];
+  let currentPage = -1, paragraph = [], enLista = false;
   const flush = () => { if (paragraph.length) { body.push(paragraph.join(" "), ""); paragraph = []; } };
+  const cerrarLista = () => { if (enLista) { body.push(""); enLista = false; } };
 
   for (const item of items) {
     if (item.kind === "heading") {
-      flush(); currentPage = -1;
+      flush(); cerrarLista(); currentPage = -1;
       body.push("#### " + item.text, "");
       continue;
     }
     if (!kept.has(item.index)) continue;
+
+    if (item.kind === "list") {
+      flush();
+      if (!enLista) enLista = true;
+      body.push("- " + (imprescindible(item.text) ? "**" + item.text + "**" : item.text));
+      continue;
+    }
+
+    cerrarLista();
     if (item.page !== currentPage) { flush(); currentPage = item.page; }
     paragraph.push(IMPORTANT_RE.test(item.text) ? "**" + item.text + "**" : item.text);
     if (paragraph.length >= 4) flush();
   }
-  flush();
+  flush(); cerrarLista();
 
   if (formulas.length) {
+
     body.push("##### Fórmulas de este apartado", "");
     for (const f of formulas) body.push("- `" + f.text + "`");
     body.push("");
@@ -1194,7 +1540,75 @@ function summarizeChunk(chunk, depth) {
   };
 }
 
-function buildIntro(documentTitle, analyses, pageCount) {
+/* ── Revisión final ──────────────────────────────────────────
+   Antes de dar el material por bueno se comprueba contra el propio
+   documento: que estén todos los apartados del índice, que no se haya
+   quedado ninguna página sin leer y que las fórmulas hayan sobrevivido
+   al resumen. Lo que falle se dice, no se esconde.                    */
+
+function revisarMaterial(estado) {
+  const aviso = [];
+  const bien = [];
+
+  const texto = normalizar(estado.analyses.map((a) => a.markdown).join(" "));
+  const esquema = [];
+  (function recorrer(nodos) {
+    for (const nodo of nodos || []) { esquema.push(normalizar(nodo.label)); recorrer(nodo.children); }
+  })(estado.outline ? estado.outline.nodes : []);
+
+  // 1. ¿Está todo el índice?
+  if (estado.indice && estado.indice.entradas.length >= 4) {
+    const total = estado.indice.entradas.length;
+    const faltan = estado.indice.entradas.filter((entrada) => {
+      const clave = normalizar(limpiarEntrada(entrada.titulo));
+      if (clave.length < 6) return false;
+      return !esquema.some((e) => e.includes(clave) || clave.includes(e)) &&
+             !texto.includes(clave.slice(0, 40));
+    });
+    if (!faltan.length) {
+      bien.push("los " + total + " apartados del índice están recogidos");
+    } else {
+      aviso.push("**" + faltan.length + " de " + total + " apartados del índice** no se han " +
+        "encontrado en el texto: " +
+        faltan.slice(0, 4).map((f) => "«" + limpiarEntrada(f.titulo) + "»").join(", ") +
+        (faltan.length > 4 ? "…" : "") +
+        ". Puede que esas páginas sean imágenes sin reconocer.");
+    }
+  }
+
+  // 2. ¿Se ha quedado alguna página sin texto?
+  const mudas = estado.pageCount - estado.pages.length;
+  if (mudas > 0) {
+    aviso.push("**" + mudas + (mudas === 1 ? " página se ha quedado" : " páginas se han quedado") +
+      " fuera** por no tener texto reconocible. El PDF original las conserva todas.");
+  } else {
+    bien.push("las " + estado.pageCount + " páginas tienen texto");
+  }
+
+  // 3. ¿Han sobrevivido las fórmulas al resumen?
+  const formulas = estado.analyses.flatMap((a) => a.formulas || []);
+  if (formulas.length) {
+    const perdidas = formulas.filter((f) => !texto.includes(normalizar(f.text).slice(0, 12)));
+    if (perdidas.length) {
+      aviso.push("**" + perdidas.length + " fórmulas** aparecen en el PDF pero no en el resumen; " +
+        "están listadas en su apartado y en el esquema.");
+    } else {
+      bien.push(formulas.length + (formulas.length === 1 ? " fórmula conservada" : " fórmulas conservadas"));
+    }
+  }
+
+  // 4. Apartados que han quedado demasiado cortos para ser fieles.
+  const escuetos = estado.analyses.filter((a, i) => i > 0 && a.markdown.length < 260);
+  if (escuetos.length > Math.max(2, estado.analyses.length * 0.25)) {
+    aviso.push("**" + escuetos.length + " apartados** han quedado muy cortos. Sube el nivel de " +
+      "resumen a «Muy detallado» si quieres conservar más texto.");
+  }
+
+  return { aviso, bien };
+}
+
+function buildIntro(documentTitle, analyses, pageCount, extra) {
+  const datos = extra || {};
   const concepts = [...new Set(analyses.flatMap((a) => a.keyConcepts))].slice(0, 12);
   const lines = [
     "### Visión general",
@@ -1203,26 +1617,112 @@ function buildIntro(documentTitle, analyses, pageCount) {
       (pageCount === 1 ? " página" : " páginas") + ") y se ha organizado en " +
       analyses.length + (analyses.length === 1 ? " apartado." : " apartados."),
     "",
-    "> [!aclaracion] Resumen extractivo: el texto procede literalmente del PDF, seleccionando las frases con mayor carga de información. En la aplicación completa, con una clave de IA, las explicaciones se reescriben y se adaptan a tu nivel.",
-    "",
   ];
+
+  if (datos.indice && datos.indice.entradas.length >= 4) {
+    const niveles = new Set(datos.indice.entradas.map((e) => e.nivel));
+    lines.push(
+      "Se ha leído **el índice del propio libro**: " + datos.indice.entradas.length +
+        " entradas en " + niveles.size + (niveles.size === 1 ? " nivel" : " niveles") +
+        ", y con ellas se han fijado los temas, los apartados y sus páginas. " +
+        "El esquema sigue esa estructura, no una inventada.",
+      "");
+  }
+
+  if (datos.conIA) {
+    lines.push(
+      "**Claude ha repasado el temario entero**: " + datos.mejorados +
+        (datos.mejorados === 1 ? " apartado reescrito" : " apartados reescritos") +
+        " a partir del texto literal del PDF" +
+        (datos.sinCambiar ? ", " + datos.sinCambiar + " sin cambiar" : "") +
+        ". Lo que no estaba en el PDF aparece marcado como añadido.",
+      "");
+  }
+
+  const revision = datos.revision;
+  if (revision) {
+    if (revision.aviso.length) {
+      lines.push("> [!duda] **Revisión del material.** " + revision.aviso.join(" "), "");
+    } else if (revision.bien.length) {
+      lines.push("> [!aclaracion] **Revisión del material:** " +
+        revision.bien.join("; ") + ". Nada se ha quedado por el camino.", "");
+    }
+  }
+
+  if (!datos.conIA) lines.push(
+    "> [!aclaracion] Resumen extractivo: el texto procede literalmente del PDF, seleccionando las frases con mayor carga de información, conservando enteras las listas, las definiciones, las fórmulas y los datos con unidades. En la aplicación completa, con una clave de IA, las explicaciones se reescriben y se adaptan a tu nivel.",
+    "");
+
   if (concepts.length) {
     lines.push("##### Conceptos imprescindibles", "", "[[chips]]" + concepts.join("|"), "");
   }
-  return { title: "Visión general", markdown: lines.join("\n").trim(), keyConcepts: concepts, sourcePages: [], formulas: [] };
+  return {
+    title: "Visión general", markdown: lines.join("\n").trim(),
+    keyConcepts: concepts, sourcePages: [], formulas: [],
+  };
 }
 
 /* ═══ 4. Esquema jerárquico ══════════════════════════════════ */
 
-function outlineFromHeadings(documentTitle, headings, analyses) {
-  if (headings.length < 2) return null;
-  const nodes = [], stack = [];
+/** Quita la numeración y los puntos de relleno de una entrada de índice. */
+function limpiarEntrada(titulo) {
+  return titulo.replace(/[\s.·•…_–—-]+$/, "").replace(/\s{2,}/g, " ").trim();
+}
 
-  for (const heading of headings) {
+/**
+ * Funde lo que dice el índice del libro con los títulos hallados en el cuerpo.
+ *
+ * El índice da los niveles buenos pero casi nunca baja del segundo; el cuerpo
+ * tiene los subapartados pero se equivoca de nivel. Juntos dan el esquema que
+ * de verdad tiene el temario.
+ */
+function fundirEstructura(headings, indice) {
+  const delCuerpo = headings.slice();
+  if (!indice || indice.entradas.length < 4) return delCuerpo;
+
+  const delIndice = indice.entradas.map((entrada) => ({
+    title: limpiarEntrada(entrada.titulo),
+    level: entrada.nivel,
+    pageNumber: entrada.paginaPdf || entrada.pagina,
+    origen: "indice",
+  })).sort((a, b) => a.pageNumber - b.pageNumber);
+
+  const yaEstan = new Set(delIndice.map((h) => normalizar(h.title)));
+  const profundidadIndice = Math.max(...delIndice.map((h) => h.level));
+
+  const fundido = [];
+  for (let i = 0; i < delIndice.length; i += 1) {
+    const entrada = delIndice[i];
+    fundido.push(entrada);
+
+    const siguiente = delIndice[i + 1];
+    const hasta = siguiente ? siguiente.pageNumber : Infinity;
+    // Subapartados que el índice no lista pero el libro sí tiene.
+    const dentro = delCuerpo.filter((h) =>
+      h.pageNumber >= entrada.pageNumber && h.pageNumber < hasta &&
+      h.level > entrada.level && !yaEstan.has(normalizar(h.title)));
+    for (const hijo of dentro.slice(0, 40)) {
+      yaEstan.add(normalizar(hijo.title));
+      fundido.push({ ...hijo, level: Math.max(hijo.level, profundidadIndice + 1) });
+    }
+  }
+  return fundido;
+}
+
+const CLASE_NIVEL = { 1: "chapter", 2: "section", 3: "subsection" };
+
+function outlineFromHeadings(documentTitle, headings, analyses, indice) {
+  const lista = fundirEstructura(headings, indice);
+  if (lista.length < 2) return null;
+
+  const nodes = [], stack = [];
+  for (const heading of lista) {
     const node = {
       label: heading.title,
-      kind: heading.level <= 1 ? "chapter" : heading.level === 2 ? "section" : "subsection",
-      page: heading.pageNumber, children: [],
+      kind: CLASE_NIVEL[Math.min(heading.level, 3)] || "detail",
+      page: heading.pageNumber,
+      origen: heading.origen || "",
+      children: [],
     };
     while (stack.length && stack[stack.length - 1].level >= heading.level) stack.pop();
     if (!stack.length) nodes.push(node);
@@ -1230,22 +1730,57 @@ function outlineFromHeadings(documentTitle, headings, analyses) {
     stack.push({ level: heading.level, node });
   }
 
+  // Cada hoja se queda con las fórmulas y los conceptos de sus páginas: así el
+  // esquema sirve para repasar y no solo para navegar.
   const formulas = analyses.flatMap((a) => a.formulas.map((f) => ({ formula: f.text, page: f.page })));
-  const used = new Set();
-  (function attach(list) {
-    for (const node of list) {
-      if (node.children && node.children.length) { attach(node.children); continue; }
-      const matching = formulas.filter((f) => f.page === node.page && !used.has(f.formula)).slice(0, 4);
-      if (matching.length) {
-        node.children = matching.map((f) => {
-          used.add(f.formula);
-          return { label: f.formula, kind: "formula", page: f.page, children: [] };
-        });
+  const conceptos = analyses.flatMap((a) =>
+    (a.keyConcepts || []).map((c) => ({ concepto: c, pages: a.sourcePages || [] })));
+  const usadas = new Set(), usados = new Set();
+
+  // Orden de lectura real: la frontera de una hoja es el título que viene
+  // después en el documento, esté al nivel que esté.
+  const enOrden = [];
+  (function aplanar(list) {
+    for (const node of list) { enOrden.push(node); aplanar(node.children); }
+  })(nodes);
+  const hasta = new Map();
+  for (let i = 0; i < enOrden.length; i += 1) {
+    const siguiente = enOrden.slice(i + 1).find((n) => n.page > enOrden[i].page);
+    hasta.set(enOrden[i], siguiente ? siguiente.page : Infinity);
+  }
+
+  (function adjuntar(list) {
+    for (let i = 0; i < list.length; i += 1) {
+      const node = list[i];
+      if (node.children.length) { adjuntar(node.children); continue; }
+      const desde = node.page || 1;
+      const limite = hasta.get(node) || Infinity;
+
+      const suyas = formulas
+        .filter((f) => f.page >= desde && f.page < limite && !usadas.has(f.formula))
+        .slice(0, 4);
+      for (const f of suyas) {
+        usadas.add(f.formula);
+        node.children.push({ label: f.formula, kind: "formula", page: f.page, children: [] });
+      }
+
+      if (node.children.length < 4) {
+        const propio = normalizar(node.label);
+        const suyos = conceptos
+          .filter((c) => c.pages.some((pg) => pg >= desde && pg < limite) &&
+                         !usados.has(c.concepto) &&
+                         // un concepto que repite el título no aporta nada
+                         !propio.includes(normalizar(c.concepto)))
+          .slice(0, 4 - node.children.length);
+        for (const c of suyos) {
+          usados.add(c.concepto);
+          node.children.push({ label: c.concepto, kind: "concept", page: desde, children: [] });
+        }
       }
     }
   })(nodes);
 
-  return { title: documentTitle, nodes };
+  return { title: documentTitle, nodes, deIndice: Boolean(indice) };
 }
 </script>
 
@@ -1741,8 +2276,16 @@ async function finishProcessing() {
   await nextFrame();
 
   const totalChars = state.pages.reduce((sum, p) => sum + p.text.length, 0);
-  state.chunks = buildChunks(state.pages, chunkOptionsFor(totalChars, 80));
-  state.headings = detectHeadings(state.pages);
+  // Primero entender el documento, y solo después trocearlo: el índice del
+  // propio libro manda sobre cualquier heurística.
+  state.estructura = leerEstructura(state.pages);
+  state.indice = state.estructura.indice;
+  state.chunks = buildChunks(state.pages, chunkOptionsFor(totalChars, 80), state.estructura);
+  state.headings = detectHeadings(state.pages, state.estructura);
+  if (state.indice) {
+    setProgress(58, state.indice.entradas.length + " entradas de índice reconocidas");
+    await nextFrame();
+  }
   setPhase("struct", "done");
 
   await rebuildStudyMaterial(true);
@@ -1759,6 +2302,8 @@ async function finishProcessing() {
     (state.usedOcr ? " · texto reconocido" : "");
   selectTab("summary");
   window.scrollTo({ top: 0, behavior: "smooth" });
+  // El repaso con Claude solo se ofrece si de verdad se puede usar aquí.
+  void ofrecerIA();
 }
 
 /* ── Reconocimiento de texto (OCR) con Claude ────────────────
@@ -1869,7 +2414,36 @@ function carrilesLocales() {
   const memoria = navigator.deviceMemory || 4;
   if (memoria <= 2) return 1;
   if (memoria <= 4) return Math.min(2, nucleos);
-  return Math.max(1, Math.min(4, Math.floor(nucleos / 2)));
+  // Se deja un núcleo libre: el PDF solo se puede dibujar en el hilo principal
+  // y, si se queda sin turno, los obreros esperan de brazos cruzados.
+  return Math.max(2, Math.min(4, nucleos - 1));
+}
+
+/* Los obreros se crean una sola vez por reconocimiento. Antes se levantaban
+   y se tiraban en cada pasada, y arrancar el motor wasm cuesta más que leer
+   varias páginas. */
+let poolLocal = [];
+let abriendoPool = null;
+
+async function abrirPool(cuantos) {
+  if (abriendoPool) await abriendoPool;
+  if (poolLocal.length >= cuantos) return poolLocal.slice(0, cuantos);
+
+  abriendoPool = (async () => {
+    const faltan = cuantos - poolLocal.length;
+    const nuevos = await Promise.all(
+      Array.from({ length: faltan }, () => nuevoObreroLocal().catch(() => null)));
+    for (const obrero of nuevos) if (obrero) poolLocal.push(obrero);
+  })();
+  await abriendoPool;
+  abriendoPool = null;
+  return poolLocal.slice(0, cuantos);
+}
+
+async function cerrarPool() {
+  const obreros = poolLocal;
+  poolLocal = [];
+  await Promise.all(obreros.map((o) => o.terminate().catch(() => null)));
 }
 
 /** Un obrero de Tesseract con el idioma ya dentro. */
@@ -1894,7 +2468,7 @@ async function nuevoObreroLocal() {
 async function pageToCanvasBlob(pageNumber, anchoObjetivo) {
   const page = await state.pdfDoc.getPage(pageNumber);
   const base = page.getViewport({ scale: 1 });
-  const scale = Math.max(1, Math.min(3.2, (anchoObjetivo || 1800) / base.width));
+  const scale = Math.max(1, Math.min(3.2, (anchoObjetivo || 1650) / base.width));
   const viewport = page.getViewport({ scale });
 
   const canvas = document.createElement("canvas");
@@ -1918,54 +2492,58 @@ async function pageToCanvasBlob(pageNumber, anchoObjetivo) {
  * el reconocimiento —lo lento— va en varios obreros a la vez.
  */
 async function procesarColaLocal(paginas, onAvance, onAviso) {
-  const cola = paginas.slice();
-  let parado = null;
-  let dibujando = Promise.resolve();
+  const carriles = Math.max(1, Math.min(carrilesLocales(), paginas.length));
+  const obreros = await abrirPool(carriles);
+  if (!obreros.length) return "motor_local";
+  if (onAviso) onAviso();
 
-  const siguienteImagen = async (pageNumber) => {
-    const turno = dibujando.then(() => pageToCanvasBlob(pageNumber));
-    dibujando = turno.catch(() => null);
-    return turno;
+  const pendientes = paginas.slice();
+  const listas = [];              // páginas ya rasterizadas, esperando obrero
+  const esperando = [];           // obreros esperando página
+  let dibujadoTerminado = false;
+  let parado = null;
+
+  const despertar = () => { while (esperando.length) esperando.shift()(); };
+
+  /** Va dibujando por delante, para que ningún obrero espere. */
+  const dibujante = async () => {
+    while (pendientes.length && !ocrAbort.signal.aborted && !parado) {
+      if (listas.length >= carriles + 1) { await esperar(25); continue; }
+      const pageNumber = pendientes.shift();
+      let blob = null;
+      try { blob = await pageToCanvasBlob(pageNumber); } catch (error) { blob = null; }
+      if (blob) listas.push({ pageNumber, blob });
+      despertar();
+    }
+    dibujadoTerminado = true;
+    despertar();
   };
 
-  const obreros = [];
-  const carril = async (indice) => {
-    let obrero = null;
-    try {
-      obrero = await nuevoObreroLocal();
-    } catch (error) {
-      if (indice === 0) parado = "motor_local";
-      return;
-    }
-    obreros.push(obrero);
-    if (indice === 0 && onAviso) onAviso();
-
+  const siguiente = async () => {
     for (;;) {
-      if (ocrAbort.signal.aborted || parado) return;
-      const pageNumber = cola.shift();
-      if (!pageNumber) return;
+      if (ocrAbort.signal.aborted || parado) return null;
+      if (listas.length) return listas.shift();
+      if (dibujadoTerminado) return null;
+      await new Promise((resolve) => esperando.push(resolve));
+    }
+  };
+
+  const carril = async (obrero) => {
+    for (;;) {
+      const trabajo = await siguiente();
+      if (!trabajo) return;
       try {
-        const blob = await siguienteImagen(pageNumber);
-        if (!blob) continue;
-        const salida = await obrero.recognize(blob);
-        applyOcrText(pageNumber, salida && salida.data && salida.data.text);
+        const salida = await obrero.recognize(trabajo.blob);
+        applyOcrText(trabajo.pageNumber, salida && salida.data && salida.data.text);
       } catch (error) {
         // Una página que falla se queda pendiente y se repasa después:
         // nunca tumba el libro entero.
-        if ((error && error.message) === "motor_local_no_carga") { parado = "motor_local"; return; }
       }
       onAvance();
     }
   };
 
-  const total = Math.max(1, Math.min(carrilesLocales(), paginas.length));
-  const lanzados = [];
-  for (let i = 0; i < total; i += 1) lanzados.push(carril(i));
-  try {
-    await Promise.all(lanzados);
-  } finally {
-    await Promise.all(obreros.map((o) => o.terminate().catch(() => null)));
-  }
+  await Promise.all([dibujante()].concat(obreros.map(carril)));
   return parado;
 }
 
@@ -2288,6 +2866,7 @@ async function runOcr() {
   }
 
   ocrRunning = false;
+  await cerrarPool();
   pararVigilante();
   $("ocrProgress").classList.add("hidden");
   $("ocrStart").disabled = false;
@@ -2350,19 +2929,232 @@ async function rebuildStudyMaterial(withPhases) {
       await nextFrame();
     }
   }
-  const intro = buildIntro(state.title, state.analyses, state.pageCount);
-  state.analyses.unshift(intro);
   if (withPhases) setPhase("summary", "done");
 
+  // El esquema se arma antes de la portada, porque la revisión final compara
+  // el índice del libro con lo que ha acabado en el esquema y en el resumen.
   if (withPhases) { setPhase("outline", "run"); setProgress(84); await nextFrame(); }
-  state.outline = outlineFromHeadings(state.title, state.headings, state.analyses) ||
-    { title: state.title, nodes: state.analyses.slice(1).map((a) => ({
+  state.outline = outlineFromHeadings(state.title, state.headings, state.analyses, state.indice) ||
+    { title: state.title, nodes: state.analyses.map((a) => ({
         label: a.title, kind: "chapter", page: a.sourcePages[0],
         children: a.keyConcepts.slice(0, 6).map((c) => ({ label: c, kind: "concept", page: a.sourcePages[0], children: [] })),
       })) };
   if (withPhases) setPhase("outline", "done");
 
+  state.revision = revisarMaterial(state);
+  state.analyses.unshift(buildIntro(state.title, state.analyses, state.pageCount, {
+    indice: state.indice, revision: state.revision,
+  }));
+
   if (withPhases) { setPhase("audio", "run"); setProgress(92); await nextFrame(); }
+  rehacerAudio();
+  if (withPhases) { setPhase("audio", "done"); setProgress(100); }
+
+  renderSummary();
+  renderOutline();
+  renderAudio();
+}
+
+/* ── Repaso con Claude ───────────────────────────────────────
+   El motor extractivo no inventa nada, pero tampoco explica: recorta
+   frases. Cuando el visor deja hablar con Claude, se le da el texto
+   literal del apartado y se le pide que lo explique de verdad, con
+   reglas duras: nada que no esté en el PDF, lo añadido marcado como
+   añadido, y las páginas citadas como vienen.
+
+   Es texto, no imágenes: funciona también en los visores que rechazan
+   las imágenes, que son los que dejaban tirados los PDF escaneados.   */
+
+let aiSample = null;
+let aiAbort = null;
+let aiRunning = false;
+
+const REGLAS_IA =
+  "Eres un profesor preparando material de estudio a partir de unos apuntes.\n" +
+  "REGLAS INNEGOCIABLES:\n" +
+  "1. No inventes NADA. Todo lo que afirmes tiene que estar en el texto que te doy.\n" +
+  "2. Si algo del texto está incompleto, cortado o es ilegible, dilo con una línea " +
+  "«> [!duda] …» en vez de rellenarlo.\n" +
+  "3. Si añades una aclaración tuya que no está en el texto, márcala con " +
+  "«> [!aclaracion] Añadido: …». Sin marcar, no añadas nada.\n" +
+  "4. Conserva TODOS los datos: definiciones, clasificaciones, listas, fórmulas, " +
+  "cifras, unidades, plazos y porcentajes. Perder un dato es peor que ser largo.\n" +
+  "5. Mantén las marcas de página «[[pag. N]]» donde correspondan.\n" +
+  "6. Escribe en español de España, claro y directo, tuteando al estudiante.\n" +
+  "FORMATO: markdown. «####» para los subapartados, listas con «-», negritas para " +
+  "los conceptos que hay que memorizar, «`fórmula`» para las fórmulas y una línea " +
+  "«> [!examen] …» con lo que más se pregunta, si el texto lo deja claro.\n" +
+  "No pongas título de nivel «###»: ya lo pone la aplicación.";
+
+/** ¿Podemos hablar con Claude en este visor? (texto, no imágenes) */
+async function prepararIA() {
+  if (aiSample) return aiSample;
+  if (!window.claude || typeof window.claude.use !== "function") return null;
+  try {
+    aiSample = await window.claude.use("sample");
+  } catch (error) {
+    aiSample = null;
+  }
+  return aiSample;
+}
+
+/** Enseña el panel de repaso solo si de verdad se puede usar. */
+async function ofrecerIA() {
+  const sample = await prepararIA();
+  $("aiCard").classList.toggle("hidden", !sample);
+}
+
+/** Reescribe un apartado. Devuelve el markdown nuevo, o null si no puede. */
+async function mejorarApartado(analysis, chunk, nivel) {
+  const detalle = {
+    RAPIDO: "Sé breve: lo esencial para repasar en cinco minutos.",
+    NORMAL: "Explicación equilibrada, sin dejarte conceptos.",
+    DETALLADO: "Explica cada concepto con sus matices y ejemplos del texto.",
+    MUY_DETALLADO: "No te dejes nada: cada definición, cada caso y cada excepción.",
+  }[nivel] || "Explicación equilibrada, sin dejarte conceptos.";
+
+  const prompt = REGLAS_IA + "\n\n" + detalle +
+    "\n\nApartado: «" + analysis.title + "».\n\nTEXTO LITERAL DE LOS APUNTES:\n\n" +
+    chunk.content.slice(0, 24000);
+
+  const respuesta = await aiSample(prompt, {
+    signal: aiAbort.signal,
+    modelTier: "default",
+  });
+  const texto = (respuesta && respuesta.text ? respuesta.text : "").trim();
+  if (texto.length < 40) return null;
+  return "### " + analysis.title + pageLabel(analysis.sourcePages) + "\n\n" +
+    texto.replace(/^#{1,3}\s+.*\n+/, "");
+}
+
+/** Le pide a Claude que revise la estructura que hemos deducido. */
+async function revisarEstructuraConIA() {
+  const titulos = (state.outline ? state.outline.nodes : []).slice(0, 60)
+    .map((n) => n.label + (n.children.length ? " (" + n.children.length + " apartados)" : ""));
+  if (titulos.length < 2) return null;
+
+  const prompt =
+    "Estos son los títulos de primer nivel que hemos deducido de un temario en PDF:\n\n" +
+    titulos.map((t, i) => (i + 1) + ". " + t).join("\n") +
+    "\n\nDime si la estructura tiene sentido como temario. Responde SOLO con un objeto " +
+    'JSON: {"correcta": true|false, "problemas": ["…"], "sugerencia": "…"}. ' +
+    "En «problemas» pon como mucho tres cosas concretas (títulos que no son títulos, " +
+    "temas que parecen partidos en dos, niveles mal puestos). Si está bien, deja la " +
+    "lista vacía. No inventes títulos que no estén en la lista.";
+
+  try {
+    return await aiSample.json(prompt, { signal: aiAbort.signal, modelTier: "quick" });
+  } catch (error) {
+    return null;
+  }
+}
+
+/** Repasa el temario entero: estructura, apartado a apartado y veredicto. */
+async function repasarConIA() {
+  if (aiRunning) return;
+  const sample = await prepararIA();
+  if (!sample) { $("aiCard").classList.add("hidden"); return; }
+
+  aiRunning = true;
+  aiAbort = new AbortController();
+  $("aiRun").disabled = true;
+  $("aiStop").style.display = "";
+  $("aiError").classList.add("hidden");
+  $("aiProgress").classList.remove("hidden");
+
+  // El primer apartado es la portada: se rehace al final, con la revisión nueva.
+  const apartados = state.analyses
+    .map((analysis, indice) => ({ analysis, indice }))
+    .filter((x) => x.indice > 0 && state.chunks[x.indice - 1]);
+
+  const total = apartados.length;
+  let hechos = 0, fallos = 0;
+  const pintar = () => {
+    $("aiBar").style.width = Math.round((hechos / Math.max(1, total)) * 100) + "%";
+    $("aiStatus").textContent = "Repasando " + hechos + " de " + total +
+      (total === 1 ? " apartado" : " apartados") + (fallos ? " · " + fallos + " sin cambiar" : "");
+  };
+
+  $("aiStatus").textContent = "Comprobando la estructura del temario…";
+  const veredicto = await revisarEstructuraConIA();
+
+  pintar();
+  const cola = apartados.slice();
+  let parado = null;
+
+  const carril = async () => {
+    for (;;) {
+      if (aiAbort.signal.aborted || parado) return;
+      const siguiente = cola.shift();
+      if (!siguiente) return;
+      try {
+        const nuevo = await mejorarApartado(
+          siguiente.analysis, state.chunks[siguiente.indice - 1], state.depth);
+        if (nuevo) {
+          siguiente.analysis.markdown = nuevo;
+          siguiente.analysis.mejorado = true;
+        } else fallos += 1;
+      } catch (error) {
+        const code = (error && error.code) || "";
+        if (code === "cancelled") return;
+        if (code === "rate_limited") {
+          cola.unshift(siguiente);
+          await esperar(9000 + Math.random() * 5000);
+          continue;
+        }
+        parado = code || "error";
+        return;
+      }
+      hechos += 1;
+      pintar();
+    }
+  };
+
+  await Promise.all([carril(), carril(), carril()]);
+
+  aiRunning = false;
+  $("aiRun").disabled = false;
+  $("aiStop").style.display = "none";
+  $("aiProgress").classList.add("hidden");
+
+  const mejorados = state.analyses.filter((a) => a.mejorado).length;
+  if (parado) {
+    $("aiError").textContent = ocrErrorMessage(parado) +
+      (mejorados ? " Se conserva lo ya reescrito." : "");
+    $("aiError").classList.remove("hidden");
+    $("aiRun").textContent = "Continuar";
+  }
+  if (!mejorados) return;
+
+  // Portada nueva: la revisión se rehace sobre el material ya reescrito.
+  state.analyses.shift();
+  state.revision = revisarMaterial(state);
+  if (veredicto && veredicto.problemas && veredicto.problemas.length) {
+    state.revision.aviso.push("Claude ha revisado la estructura y señala: " +
+      veredicto.problemas.slice(0, 3).join("; ") + ".");
+  } else if (veredicto && veredicto.correcta) {
+    state.revision.bien.push("Claude confirma que la estructura del temario es coherente");
+  }
+  state.analyses.unshift(buildIntro(state.title, state.analyses, state.pageCount, {
+    indice: state.indice, revision: state.revision, conIA: true,
+    mejorados, sinCambiar: total - mejorados,
+  }));
+
+  state.aiUsed = true;
+  $("aiBadge").classList.remove("hidden");
+  $("aiTitle").textContent = "Temario revisado por Claude";
+  $("aiHint").textContent = mejorados + " de " + total +
+    " apartados reescritos a partir del texto literal del PDF. Puedes volver a pasarlo " +
+    "si cambias el nivel de resumen.";
+  $("aiRun").textContent = "Volver a revisar";
+
+  rehacerAudio();
+  renderSummary();
+  renderAudio();
+}
+
+/** El audio se rehace cuando cambia el texto del resumen. */
+function rehacerAudio() {
   state.chapters = [];
   for (const analysis of state.analyses) {
     const script = speakify(analysis.markdown);
@@ -2370,11 +3162,7 @@ async function rebuildStudyMaterial(withPhases) {
     const seconds = estimateSeconds(script);
     state.chapters.push({ title: analysis.title, script, seconds, segments: segmentScript(script, seconds) });
   }
-  if (withPhases) { setPhase("audio", "done"); setProgress(100); }
-
-  renderSummary();
-  renderOutline();
-  renderAudio();
+  player.index = 0;
 }
 
 /* ── Resumen ───────────────────────────────────────────────── */
@@ -2385,9 +3173,23 @@ function renderSummary() {
   const body = $("summaryBody");
   body.innerHTML = "";
 
-  const isLong = state.analyses.length > 10;
+  // Si el libro trae índice, se enseña el suyo —con sus niveles y sus páginas—
+  // en lugar de una lista plana de los apartados que hayamos troceado.
+  const delLibro = state.indice && state.indice.entradas.length >= 4;
+  const isLong = delLibro || state.analyses.length > 10;
   $("indexCard").classList.toggle("hidden", !isLong);
-  if (isLong) {
+  $("indexTitle").textContent = delLibro ? "Índice del libro" : "Índice del temario";
+
+  if (delLibro) {
+    $("indexList").innerHTML = state.indice.entradas.map((entrada) => {
+      const sangria = (Math.min(entrada.nivel, 4) - 1) * 14;
+      const peso = entrada.nivel <= 1 ? 650 : entrada.nivel === 2 ? 550 : 400;
+      return '<li style="margin-left:' + sangria + 'px; font-weight:' + peso + '; list-style:none">' +
+        escapeHtml(limpiarEntrada(entrada.titulo)) +
+        ' <button class="pageref" data-page="' + (entrada.paginaPdf || entrada.pagina) + '">pág. ' +
+        (entrada.paginaPdf || entrada.pagina) + "</button></li>";
+    }).join("");
+  } else if (isLong) {
     $("indexList").innerHTML = state.analyses
       .map((a, i) => '<li><a href="#s' + i + '" style="color:var(--ink-soft)">' + escapeHtml(a.title) + "</a></li>")
       .join("");
@@ -2859,6 +3661,11 @@ $("ocrAll").addEventListener("click", () => {
   void runOcr();
 });
 $("ocrBuild").addEventListener("click", () => { void buildFromOcr(); });
+$("aiRun").addEventListener("click", () => { void repasarConIA(); });
+$("aiStop").addEventListener("click", () => {
+  if (aiAbort) aiAbort.abort();
+  $("aiStatus").textContent = "Parando…";
+});
 $("ocrEngineLocal").addEventListener("click", () => { if (!ocrRunning) elegirMotor("local"); });
 $("ocrEngineClaude").addEventListener("click", () => { if (!ocrRunning) elegirMotor("claude"); });
 $("ocrStop").addEventListener("click", () => {
@@ -2933,6 +3740,13 @@ $("nextPage").addEventListener("click", () => renderPage(state.page + 1));
 /* Volver al principio */
 $("resetBtn").addEventListener("click", () => {
   if (ocrAbort) ocrAbort.abort();
+  if (aiAbort) aiAbort.abort();
+  aiRunning = false;
+  state.aiUsed = false;
+  $("aiBadge").classList.add("hidden");
+  $("aiCard").classList.add("hidden");
+  $("aiRun").textContent = "Revisar el temario";
+  $("aiRun").disabled = false;
   $("ocrPanel").classList.add("hidden");
   stopSpeech();
   player.playing = false; player.index = 0; player.segment = 0; player.virtual = 0;

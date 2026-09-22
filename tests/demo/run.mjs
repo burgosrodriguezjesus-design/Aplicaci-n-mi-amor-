@@ -51,7 +51,7 @@ async function preparar() {
     .replace("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js", "pdfjs/pdf.min.js")
     .replace("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js", "pdfjs/pdf.worker.min.js");
   await writeFile(path.join(web, "index.html"), html);
-  for (const f of ["apuntes-escaneados.pdf", "escaneado-largo.pdf"]) {
+  for (const f of ["apuntes-escaneados.pdf", "escaneado-largo.pdf", "temario-con-indice.pdf"]) {
     const origen = path.join(root, "tests/fixtures", f);
     if (await existe(origen)) await cp(origen, path.join(web, f));
   }
@@ -68,7 +68,9 @@ function servir() {
   return new Promise((r) => server.listen(PORT, "127.0.0.1", () => r(server)));
 }
 
-const pruebas = ["ocr-local.mjs", "ocr-fallback.mjs", "ocr-claude.mjs", "ocr-libro.mjs"];
+const pruebas = process.env.DEMO_ONLY
+  ? process.env.DEMO_ONLY.split(",")
+  : ["estructura.mjs", "repaso-ia.mjs", "ocr-local.mjs", "ocr-fallback.mjs", "ocr-claude.mjs", "ocr-libro.mjs"];
 
 await preparar();
 const server = await servir();

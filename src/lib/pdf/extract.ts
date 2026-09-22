@@ -8,10 +8,15 @@
 import "server-only";
 import { loadPdfjs } from "./pdfjs";
 
+/** Una linea con sus senales tipograficas: altura de letra y margen izquierdo. */
+export type PageLine = { text: string; height: number; x: number };
+
 export type PageExtraction = {
   pageNumber: number;
   text: string;
   charCount: number;
+  /** Lineas con sus senales tipograficas (vacio en paginas reconocidas por OCR). */
+  lines?: PageLine[];
   source: "TEXT" | "OCR" | "EMPTY";
 };
 
@@ -58,6 +63,19 @@ type Line = { y: number; height: number; parts: { x: number; width: number; str:
  * lo normal. Asi se conservan titulos, listas y numeracion.
  */
 function itemsToText(items: TextItem[]): string {
+  return itemsToLines(items)
+    .map((line) => line.text)
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/**
+ * Igual que arriba, pero conservando la altura y el margen izquierdo de cada
+ * linea. Son las dos senales que distinguen un titulo de un parrafo cuando el
+ * documento no numera sus apartados.
+ */
+function itemsToLines(items: TextItem[]): PageLine[] {
   const lines: Line[] = [];
   const tolerance = 2.5;
 
@@ -75,7 +93,7 @@ function itemsToText(items: TextItem[]): string {
     line.parts.push({ x, width: item.width ?? item.str.length * 4, str: item.str });
   }
 
-  if (lines.length === 0) return "";
+  if (lines.length === 0) return [];
 
   lines.sort((a, b) => b.y - a.y);
 
@@ -85,7 +103,7 @@ function itemsToText(items: TextItem[]): string {
   const sorted = [...gaps].sort((a, b) => a - b);
   const medianGap = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 14;
 
-  const out: string[] = [];
+  const out: PageLine[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     line.parts.sort((a, b) => a.x - b.x);
@@ -109,12 +127,16 @@ function itemsToText(items: TextItem[]): string {
     if (i > 0) {
       const gap = lines[i - 1].y - line.y;
       // Un salto claramente mayor que el interlineado indica parrafo nuevo.
-      if (gap > medianGap * 1.6) out.push("");
+      if (gap > medianGap * 1.6) out.push({ text: "", height: 0, x: 0 });
     }
-    out.push(rendered);
+    out.push({
+      text: rendered,
+      height: Math.round(line.height * 10) / 10,
+      x: Math.round(line.parts[0].x),
+    });
   }
 
-  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return out;
 }
 
 export async function extractPdf(data: Buffer): Promise<PdfExtraction> {
@@ -149,13 +171,20 @@ export async function extractPdf(data: Buffer): Promise<PdfExtraction> {
 
   for (let pageNumber = 1; pageNumber <= pageCount; pageNumber++) {
     let text = "";
+    let lines: PageLine[] = [];
     try {
       const page = await doc.getPage(pageNumber);
       const content = await page.getTextContent();
-      text = itemsToText(content.items as unknown as TextItem[]);
+      lines = itemsToLines(content.items as unknown as TextItem[]);
+      text = lines
+        .map((line) => line.text)
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
       page.cleanup();
     } catch {
       text = "";
+      lines = [];
     }
 
     const charCount = text.replace(/\s/g, "").length;
@@ -166,6 +195,7 @@ export async function extractPdf(data: Buffer): Promise<PdfExtraction> {
       pageNumber,
       text,
       charCount,
+      lines,
       source: usable ? "TEXT" : "EMPTY",
     });
   }

@@ -25,6 +25,7 @@ import {
   PdfInvalidError,
   PdfProtectedError,
   looksLikePdf,
+  type PageLine,
 } from "../pdf/extract";
 import { ocrAvailable, ocrEngineLabel, ocrPages } from "../pdf/ocr";
 import {
@@ -33,6 +34,7 @@ import {
   detectHeadings,
   type Chunk,
 } from "../pdf/structure";
+import { mergeHeadings, readStructure, type Toc } from "../pdf/toc";
 import {
   analyzeChunk,
   currentProvider,
@@ -204,7 +206,14 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
     );
   }
 
-  return { pages, pageCount: extraction.pageCount, coverage };
+  // Las senales tipograficas (tamano de letra) no se guardan en la base de
+  // datos, pero sirven para decidir que es un titulo: se llevan en memoria.
+  const linesByPage = new Map<number, PageLine[]>();
+  for (const page of extraction.pages) {
+    if (page.lines && page.lines.length > 0) linesByPage.set(page.pageNumber, page.lines);
+  }
+
+  return { pages, pageCount: extraction.pageCount, coverage, linesByPage };
 }
 
 /** Fase 3: estructura y troceado. */
@@ -333,12 +342,17 @@ export async function buildOutline(opts: {
   chunks: Chunk[];
   ctx: GenerationContext;
   headings?: HeadingRef[];
+  /** Indice del propio libro, si lo trae: manda sobre lo deducido. */
+  toc?: Toc | null;
   instructions?: string | null;
 }) {
   const { documentId, jobId, analyses, chunks, ctx } = opts;
   await setStatus(documentId, jobId, "OUTLINING", "Creando esquema de estudio…", 84);
 
-  const tree = await generateOutline(analyses, chunks, ctx, opts.headings ?? []);
+  // El indice del libro fija los temas y sus niveles; los titulos hallados en
+  // el cuerpo aportan los subapartados que el indice no lista.
+  const headings = mergeHeadings(opts.headings ?? [], opts.toc ?? null);
+  const tree = await generateOutline(analyses, chunks, ctx, headings);
   const provider = currentProvider();
 
   const previous = await prisma.outline.findFirst({
@@ -420,13 +434,18 @@ export async function buildAudioScripts(opts: {
 }
 
 /** Recupera los titulos detectados a partir del texto ya extraido. */
-async function headingsFor(documentId: string): Promise<HeadingRef[]> {
+async function headingsFor(
+  documentId: string,
+): Promise<{ headings: HeadingRef[]; toc: Toc | null }> {
   const pages = await prisma.documentPage.findMany({
     where: { documentId },
     orderBy: { pageNumber: "asc" },
     select: { pageNumber: true, text: true },
   });
-  return detectHeadings(pages);
+  // Al regenerar no tenemos las senales tipograficas -no se guardan-, pero el
+  // indice del libro se vuelve a leer del texto igual de bien.
+  const structure = readStructure(pages);
+  return { headings: detectHeadings(pages, structure), toc: structure.toc };
 }
 
 /** Handler principal: procesa un documento de principio a fin. */
@@ -481,10 +500,23 @@ async function handleProcessDocument(job: {
   const pageTexts = extracted.pages.map((page) => ({
     pageNumber: page.pageNumber,
     text: page.text,
+    lines: extracted.linesByPage.get(page.pageNumber),
   }));
+  // Primero entender el documento y solo despues trocearlo: el indice del
+  // propio libro manda sobre cualquier heuristica.
+  const structure = readStructure(pageTexts);
+  if (structure.toc) {
+    await setStatus(
+      job.documentId,
+      job.id,
+      "ANALYZING",
+      `Índice reconocido: ${structure.toc.entries.length} apartados`,
+      34,
+    );
+  }
   const totalChars = pageTexts.reduce((sum, page) => sum + page.text.length, 0);
-  const chunks = buildChunks(pageTexts, chunkOptionsFor(totalChars));
-  const headings = detectHeadings(pageTexts);
+  const chunks = buildChunks(pageTexts, chunkOptionsFor(totalChars), structure);
+  const headings = detectHeadings(pageTexts, structure);
 
   if (chunks.length === 0) {
     throw new ProcessingError(
@@ -517,6 +549,7 @@ async function handleProcessDocument(job: {
     chunks,
     ctx,
     headings,
+    toc: structure.toc,
   });
 
   await buildAudioScripts({
@@ -606,7 +639,7 @@ async function handleRegenerateSummary(job: {
       analyses,
       chunks,
       ctx,
-      headings: await headingsFor(job.documentId),
+      ...(await headingsFor(job.documentId)),
       instructions,
     });
   }
@@ -675,7 +708,7 @@ async function handleRegenerateOutline(job: {
     jobId: job.id,
     analyses,
     chunks,
-    headings: await headingsFor(job.documentId),
+    ...(await headingsFor(job.documentId)),
     ctx: {
       documentTitle: document.title,
       pageCount: document.pageCount,

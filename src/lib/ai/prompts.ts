@@ -70,7 +70,19 @@ export const FIDELITY_RULES = `REGLAS DE FIDELIDAD (obligatorias, sin excepcion)
    Todo lo que no vaya dentro de ese bloque se entiende que procede del documento.
 6. Conserva la terminologia exacta del original: si el documento dice "interruptor diferencial", no lo cambies por "diferencial".
 7. Conserva integramente formulas, unidades, simbolos, cifras, fechas y nombres propios.
-8. Responde SIEMPRE en espanol.`;
+8. Responde SIEMPRE en espanol.
+9. ESTRUCTURA: el titulo del fragmento indica a que tema pertenece ("TEMA 2 - ... · 2.3 ..."). Respeta ese sitio: no renombres el apartado, no lo fundas con otro y no inventes subapartados que el texto no tenga. Si el texto trae subapartados propios, mantenlos como encabezados \`####\` con su numeracion original.
+10. LISTAS Y CLASIFICACIONES: cuando el original enumera o clasifica ("se dividen en", "tipos de", "consta de"), la respuesta debe llevar esa enumeracion como lista, con todos sus elementos. Convertir una lista en prosa pierde justo lo que se estudia.
+11. TABLAS: si el texto trae una tabla, reprodúcela como tabla Markdown con todas sus filas. No la resumas en una frase.
+12. DATOS EXAMINABLES: porcentajes, plazos, importes, medidas, tolerancias y excepciones se copian tal cual, nunca se redondean ni se generalizan.`;
+
+/** Repaso obligatorio antes de dar una respuesta por buena. */
+export const REVIEW_CHECKLIST = `ANTES DE RESPONDER, REVISA TU PROPIO TEXTO:
+- Recorre el texto original de arriba abajo y comprueba que cada definicion, formula, clasificacion, cifra y fecha esta en tu respuesta. Si falta alguna, anadela.
+- Comprueba que no has escrito ni un solo dato que no este en el original. Si lo has hecho, quitalo o marcalo como > [!aclaracion].
+- Comprueba que las listas del original siguen siendo listas y que ningun elemento se ha quedado fuera.
+- Comprueba que las referencias de pagina salen de las marcas \`[[pag. N]]\` y no de tu cabeza.
+- Si algo del original esta cortado o ilegible, dilo con > [!duda] en vez de completarlo.`;
 
 export function buildSystemPrompt(opts: {
   depth: SummaryDepth;
@@ -87,6 +99,8 @@ PERFIL DEL LECTOR
 
 NIVEL DE DETALLE SOLICITADO (${opts.depth})
 - ${DEPTH_RULES[opts.depth] ?? DEPTH_RULES.DETALLADO}
+
+${REVIEW_CHECKLIST}
 
 FORMATO
 - Markdown limpio.

@@ -8,8 +8,10 @@
  *     pagina original, que es lo que permite las citas "pag. 17".
  */
 import "server-only";
+import type { PageLine } from "./extract";
+import { normalize, type StructureContext } from "./toc";
 
-export type PageText = { pageNumber: number; text: string };
+export type PageText = { pageNumber: number; text: string; lines?: PageLine[] };
 
 export type DetectedHeading = {
   title: string;
@@ -118,39 +120,105 @@ export function stripRepeatedHeaders(pages: PageText[]): PageText[] {
       .filter((line) => !repeated.has(line.trim()))
       .join("\n")
       .trim(),
+    lines: (page.lines ?? []).filter((line) => !repeated.has((line.text ?? "").trim())),
   }));
 }
 
-export type TaggedLine = { text: string; pageNumber: number; heading: number | null };
+export type TaggedLine = {
+  text: string;
+  pageNumber: number;
+  heading: number | null;
+  /** Que senal ha decidido que esto es un titulo. */
+  source?: string;
+};
 
-/** Convierte las paginas en lineas etiquetadas con su pagina y su nivel de titulo. */
-export function tagLines(pages: PageText[]): TaggedLine[] {
+/**
+ * Convierte las paginas en lineas etiquetadas con su pagina y su nivel de titulo.
+ *
+ * Decide con todo lo que sabe, en este orden: lo que confirma el indice del
+ * libro, la palabra "tema", una numeracion que continua la serie del
+ * documento, el tamano de la letra y, ya como ultimo recurso, las mayusculas.
+ * Antes se fiaba casi solo de lo ultimo, y ascendia frases sueltas a titulo.
+ */
+export function tagLines(pages: PageText[], context?: StructureContext): TaggedLine[] {
   const out: TaggedLine[] = [];
+  const confirmed = context?.confirmed ?? new Map<string, number>();
+  const tocPages = context?.tocPages ?? new Set<number>();
+  const bodyHeight = context?.bodyHeight ?? null;
+  const sequence = new Map<number, number>();
+
+  /** Una numeracion vale como titulo si continua la serie del documento. */
+  const sequenceFits = (token: string) => {
+    const parts = token.split(".").map((n) => Number.parseInt(n, 10));
+    const depth = parts.length;
+    const current = parts[depth - 1];
+    const previous = sequence.get(depth);
+    const fits = previous === undefined ? current <= 3 : current === previous + 1 || current === previous;
+    if (fits) {
+      sequence.set(depth, current);
+      for (const key of [...sequence.keys()]) if (key > depth) sequence.delete(key);
+    }
+    return fits;
+  };
 
   for (const page of pages) {
-    for (const raw of page.text.split("\n")) {
-      const line = raw.trim();
+    // El indice no es contenido: si se trocea, se resume su propia lista.
+    if (tocPages.has(page.pageNumber)) continue;
+
+    const lines: PageLine[] =
+      page.lines && page.lines.length > 0
+        ? page.lines
+        : page.text.split("\n").map((text) => ({ text, height: 0, x: 0 }));
+
+    for (const raw of lines) {
+      const line = (raw.text ?? "").trim();
+      const height = raw.height || 0;
       if (isNoise(line)) {
         if (line === "") out.push({ text: "", pageNumber: page.pageNumber, heading: null });
         continue;
       }
 
       let heading: number | null = null;
+      let source = "";
 
       // Un titulo nunca termina en signo de puntuacion de frase.
       const endsLikeSentence = /[.;,]$/.test(line);
+      const short = line.length <= 120;
+      const big = bodyHeight !== null && height >= bodyHeight * 1.14;
+      const veryBig = bodyHeight !== null && height >= bodyHeight * 1.42;
+      const fromToc = confirmed.get(normalize(line));
 
-      if (CHAPTER_RE.test(line) && line.length <= 120 && !endsLikeSentence) {
+      if (fromToc !== undefined && short) {
+        heading = fromToc;
+        source = "indice";
+      } else if (CHAPTER_RE.test(line) && short && !endsLikeSentence) {
         heading = 1;
-      } else if (endsLikeSentence) {
-        heading = null;
-      } else {
+        source = "tema";
+      } else if (!endsLikeSentence || big) {
         const numbered = NUMBERED_RE.exec(line);
-        if (numbered && !/[.:;,]$/.test(numbered[2]) && line.length <= 120) {
+        if (
+          numbered &&
+          !/[.:;,]$/.test(numbered[2]) &&
+          short &&
+          (sequenceFits(numbered[1]) || big)
+        ) {
           const depth = numbered[1].split(".").length;
-          heading = Math.min(depth + 1, 4);
-        } else if (isMostlyUppercase(line) && line.length <= 90 && !/[.;,]$/.test(line)) {
+          heading = Math.min(context?.hasChapters ? depth + 1 : depth, 5);
+          source = "numero";
+        } else if (veryBig && short && !endsLikeSentence) {
           heading = 1;
+          source = "tamano";
+        } else if (big && short && !endsLikeSentence) {
+          heading = 2;
+          source = "tamano";
+        } else if (
+          isMostlyUppercase(line) &&
+          line.length <= 90 &&
+          !/[.;,]$/.test(line) &&
+          (bodyHeight === null || height >= bodyHeight * 0.95)
+        ) {
+          heading = 1;
+          source = "mayusculas";
         }
       }
 
@@ -170,7 +238,7 @@ export function tagLines(pages: PageText[]): TaggedLine[] {
         continue;
       }
 
-      out.push({ text: line, pageNumber: page.pageNumber, heading });
+      out.push({ text: line, pageNumber: page.pageNumber, heading, source });
     }
     // Marca implicita de fin de pagina.
     out.push({ text: "", pageNumber: page.pageNumber, heading: null });
@@ -263,11 +331,15 @@ function linesToContent(lines: TaggedLine[]) {
  * Las secciones demasiado largas se dividen por parrafos; las muy cortas se
  * fusionan con la siguiente para no malgastar llamadas a la IA.
  */
-export function buildChunks(pages: PageText[], options: ChunkOptions = {}): Chunk[] {
+export function buildChunks(
+  pages: PageText[],
+  options: ChunkOptions = {},
+  context?: StructureContext,
+): Chunk[] {
   const targetChars = options.targetChars ?? TARGET_CHUNK_CHARS;
   const maxChars = options.maxChars ?? MAX_CHUNK_CHARS;
   const cleaned = stripRepeatedHeaders(pages);
-  const lines = tagLines(cleaned);
+  const lines = tagLines(cleaned, context);
   const rawSections = buildRawSections(lines);
 
   const chunks: Chunk[] = [];
@@ -312,10 +384,20 @@ export function buildChunks(pages: PageText[], options: ChunkOptions = {}): Chun
     }
     if (section.level <= 1) currentChapter = section.title;
 
-    const title = currentChapter ?? section.title;
-    const level = currentChapter ? 1 : section.level;
+    // Un apartado por fragmento, con su tema delante: un tema de veinte
+    // paginas en un solo fragmento ni se resume bien ni se estudia.
+    const own = section.level > 1 ? section.title : null;
+    const title = currentChapter
+      ? own
+        ? `${currentChapter} · ${own}`
+        : currentChapter
+      : section.title;
+    const level = currentChapter && !own ? 1 : section.level;
 
-    const emitted = headings.filter((heading) => heading.title !== title);
+    // El titulo del apartado ya encabeza el fragmento: repetirlo dentro sobra.
+    const emitted = headings.filter(
+      (heading) => heading.title !== title && !title.endsWith(heading.title),
+    );
     if (emitted.length) {
       content = `${prefixMarkdown(emitted)}\n\n${content}`;
     }
@@ -418,8 +500,8 @@ export function buildChunks(pages: PageText[], options: ChunkOptions = {}): Chun
 }
 
 /** Indice de titulos detectados, util para el esquema de respaldo. */
-export function detectHeadings(pages: PageText[]): DetectedHeading[] {
-  const lines = tagLines(stripRepeatedHeaders(pages));
+export function detectHeadings(pages: PageText[], context?: StructureContext): DetectedHeading[] {
+  const lines = tagLines(stripRepeatedHeaders(pages), context);
   const headings: DetectedHeading[] = [];
   lines.forEach((line, index) => {
     if (line.heading !== null && line.text) {

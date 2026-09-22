@@ -85,13 +85,44 @@ comprobación de que el resumen conserva fórmulas y datos numéricos, esquema
 jerárquico, carga de segmentos de audio, progreso, regeneración de un apartado
 suelto, descarga en Markdown, aislamiento entre cuentas y borrado.
 
-La demo tiene además sus propias pruebas en un navegador real, que es donde se
-ve si un PDF escaneado acaba convertido en material de estudio:
+Y dos pruebas más, que no necesitan servidor:
 
 ```bash
-node scripts/build-demo-assets.mjs
-node tests/demo/run.mjs
+npm run test:estructura   # entiende el índice de un temario y lo trocea bien
+npm run demo:assets       # motor de lectura local de la demo (una vez)
+npm run test:demo         # la demo entera en un navegador real
 ```
+
+`test:estructura` comprueba lo que más se nota en un libro de verdad: que el
+índice se lee del propio PDF, que los temas y apartados quedan en su nivel, que
+las páginas impresas se cuadran con las del fichero y que ningún dato con
+unidades se pierde por el camino.
+
+## Cómo entiende un temario
+
+Antes de resumir nada, el motor lee la estructura del documento:
+
+1. **Busca el índice del propio libro** en las primeras páginas y lo reconoce
+   por la forma de sus líneas (título, puntos de relleno, número de página).
+2. **Cuadra la numeración**: el índice numera el papel y el PDF numera hojas.
+   Se busca dónde aparece de verdad cada título y se corrige el desfase, así que
+   las citas «pág. 17» abren la página que toca.
+3. **Aparta las hojas del índice**: son una lista, no contenido que resumir.
+4. **Decide los títulos con varias señales a la vez** y en este orden: lo que
+   confirma el índice, la palabra «tema», una numeración que continúa la serie
+   del documento, el tamaño de la letra frente al cuerpo del texto y, ya como
+   último recurso, las mayúsculas.
+5. **Funde índice y cuerpo** para el esquema: el índice pone los temas y sus
+   niveles, y los títulos hallados dentro aportan los subapartados que el índice
+   no lista.
+6. **Trocea por apartados**, no por temas enteros, y cada fragmento viaja a la IA
+   con su tema delante («TEMA 2 - … · 2.3 …») para que sepa dónde está.
+
+A la IA se le pide además que **se revise a sí misma** antes de responder:
+recorrer el original comprobando que no falta ninguna definición, fórmula,
+clasificación ni cifra, que no ha escrito nada que no esté en el texto, que las
+listas siguen siendo listas y que las páginas citadas salen de las marcas reales
+del documento.
 
 ## Temarios completos
 
