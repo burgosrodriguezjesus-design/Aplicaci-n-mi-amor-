@@ -7,6 +7,7 @@ la aplicación entera.
 npm run test:estructura      # el motor entiende el índice de un temario
 npm run test:almacenamiento  # el guardado compatible con S3
 npm run test:blob            # el guardado en Vercel Blob
+npm run test:almacen-db      # el guardado dentro de la base de datos
 ```
 
 | Prueba | Qué asegura |
@@ -15,6 +16,7 @@ npm run test:blob            # el guardado en Vercel Blob
 | `almacenamiento.mts` | El driver S3 firma bien. El servidor de prueba **verifica la firma con una librería independiente** (`aws4`) y contesta 403 si no cuadra, igual que haría Cloudflare R2: si la ida y vuelta funciona, la firma es correcta. |
 | `reanudar-ocr.mts` | Un reconocimiento cortado a mitad se reanuda donde iba en vez de empezar de cero. Es lo que hace viable un libro escaneado en un alojamiento gratuito, que se duerme solo. |
 | `rebanadas.mjs` | El procesado se puede partir en tandas cortas y el material final es el mismo. Es lo que permite publicarla donde cada petición se corta a los 60 segundos. |
+| `almacen-db.mts` | Los ficheros se pueden guardar dentro de la propia base de datos, con un PDF de 3 MB de verdad: es lo que permite publicar la aplicación creando una sola cosa. |
 | `blob.mts` | El almacenamiento de Vercel se usa como toca: rutas privadas, sin sufijos aleatorios, y borrar algo que ya no está no es un error. El servicio real no se puede levantar en local, así que el cliente se sustituye por uno que apunta con qué argumentos se le llama. |
 | `sesiones.mjs` | Sin `AUTH_SECRET`, la aplicación se genera uno y lo guarda: la sesión sobrevive a un reinicio en vez de echar a todo el mundo en cada despliegue. |
 

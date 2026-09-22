@@ -29,6 +29,19 @@ model Setting {
   updatedAt DateTime @updatedAt
 }
 
+/// Fichero guardado dentro de la propia base de datos.
+///
+/// Es la opcion que menos pide al publicar: sin almacen aparte, sin claves y
+/// sin cuentas en otros sitios. Los PDF no son accesibles por ninguna URL:
+/// salen unicamente por las rutas autenticadas de la aplicacion.
+model StoredFile {
+  key         String   @id
+  contentType String   @default("application/octet-stream")
+  size        Int
+  data        Bytes
+  createdAt   DateTime @default(now())
+}
+
 /// Cuenta de usuario. El progreso se sincroniza entre dispositivos por usuario.
 model User {
   id               String   @id @default(cuid())

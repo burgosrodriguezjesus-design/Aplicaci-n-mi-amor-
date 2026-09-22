@@ -24,7 +24,8 @@
     "test:reanudar": "tsx tests/unit/reanudar-ocr.mts",
     "test:rebanadas": "node tests/unit/rebanadas.mjs",
     "test:blob": "tsx tests/unit/blob.mts",
-    "material": "node scripts/material.mjs"
+    "material": "node scripts/material.mjs",
+    "test:almacen-db": "tsx tests/unit/almacen-db.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

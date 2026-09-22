@@ -11,61 +11,61 @@ sin copiar claves de ningún sitio y **sin configurar ni una variable**.
 
 ## Todo en Vercel
 
-### 1 · Crear el proyecto
+Hace falta **una sola cosa**: la base de datos. Nada más. Ni almacén de
+ficheros, ni claves que copiar, ni variables que configurar, ni tarjeta.
 
-1. Entra en **[vercel.com](https://vercel.com)** y crea la cuenta con GitHub.
-2. **Add New → Project** y elige el repositorio `Aplicaci-n-mi-amor-`.
-3. En **Root Directory** déjalo como está. **No despliegues todavía**: primero
-   crea el almacén y la base de datos (paso 2). Si ya le has dado a *Deploy* y
-   ha fallado, no pasa nada: sigue con el paso 2 y luego **Redeploy**.
+### El camino corto
 
-### 2 · La base de datos y los ficheros, desde el mismo panel
+[**→ Publicar en Vercel**](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fburgosrodriguezjesus-design%2FAplicaci-n-mi-amor-&project-name=estudia&repository-name=estudia&stores=%5B%7B%22type%22%3A%22postgres%22%7D%5D)
 
-Dentro del proyecto, pestaña **Storage**:
+Ese enlace abre Vercel con el repositorio y la base de datos ya preparados.
+Entras con GitHub, le das a **Deploy** y esperas unos minutos.
 
-1. **Create Database → Postgres**. Nombre: el que quieras. Región: la más
-   cercana. Al crearla, Vercel la conecta sola al proyecto.
-2. **Create → Blob**. Es donde van los PDF y el audio. También se conecta sola.
+### Si prefieres hacerlo a mano
 
-Eso es todo. **No tienes que copiar ninguna clave ni añadir ninguna variable**:
-Vercel las pone en el proyecto y la aplicación las reconoce por su nombre. Los
-ficheros se guardan como privados, así que no existe ninguna dirección pública
-desde la que descargar tus apuntes.
+1. **[vercel.com](https://vercel.com)** → cuenta con GitHub → **Add New →
+   Project** → eliges `Aplicaci-n-mi-amor-`.
+2. Dentro del proyecto, pestaña **Storage** → **Create Database → Postgres**.
+   Vercel la conecta sola.
+3. **Deployments → Redeploy**.
 
-### 3 · Desplegar
+Da igual el orden: si despliegas antes de crear la base de datos, la
+construcción se para y te dice exactamente eso. Creas la base de datos, le das
+a *Redeploy* y ya está.
 
-Vuelve a **Deployments → Redeploy** (o haz *Deploy* si aún no lo habías hecho).
-La primera construcción tarda unos minutos: además de compilar, crea las tablas
-de la base de datos.
+### Comprobar que está bien
 
-Cuando termine, abre la dirección `https://tu-proyecto.vercel.app`.
-
-**Para comprobar que está bien montada**, abre
-`https://tu-proyecto.vercel.app/api/health`. Debe responder algo así:
+Abre `https://tu-proyecto.vercel.app/api/health`. Debe responder:
 
 ```json
-{"ok":true,"database":{"ok":true},"storage":{"ok":true,"driver":"blob"}}
+{"ok":true,"database":{"ok":true},"storage":{"ok":true,"driver":"db"}}
 ```
 
-Si alguna de las dos dice `"ok":false`, el mensaje que la acompaña dice
-exactamente qué falta. Casi siempre es que falta crear el almacén Blob o la
-base de datos en **Storage**.
+`driver: "db"` significa que los PDF se guardan dentro de la propia base de
+datos: por eso no hace falta crear un almacén aparte. No son accesibles desde
+ninguna dirección pública; solo salen por la aplicación, con tu sesión.
 
-### 4 · Crear tu cuenta e instalarla
+Si algo dice `"ok":false`, el mensaje al lado dice qué falta.
 
-Entra en la aplicación y **regístrate**. La cuenta es tuya y nadie más ve tus
-documentos. Aparecerá abajo un aviso para instalarla; si lo cierras:
+### Entrar e instalarla
 
-**iPhone y iPad (Safari).** Toca **Compartir** (el cuadrado con la flecha) →
-**Añadir a pantalla de inicio** → **Añadir**. Tiene que ser Safari: desde Chrome
-en iOS no se puede.
+Abre `https://tu-proyecto.vercel.app` y **regístrate**: esa cuenta es tuya y
+nadie más ve tus documentos. Aparecerá abajo un aviso para instalarla. Si lo
+cierras:
+
+**iPhone y iPad (Safari).** **Compartir** (el cuadrado con la flecha) →
+**Añadir a pantalla de inicio** → **Añadir**. Tiene que ser Safari.
 
 **Android (Chrome).** Tres puntos → **Instalar aplicación**.
 
-**Ordenador (Chrome o Edge).** El icono de instalar, a la derecha de la barra de
-direcciones.
+**Ordenador (Chrome o Edge).** El icono de instalar, en la barra de direcciones.
 
----
+### ¿Y si algún día subes muchísimos libros?
+
+Guardar los PDF en la base de datos va de sobra para unos apuntes, pero ocupa
+sitio (el plan gratuito da medio giga: unos ocho libros escaneados grandes). Si
+te quedas corto, crea un **Blob** en la misma pestaña *Storage* y la aplicación
+empieza a usarlo sola, sin tocar nada más.
 
 ## Lo que tienes que saber
 

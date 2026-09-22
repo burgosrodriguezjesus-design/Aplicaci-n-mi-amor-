@@ -52,6 +52,9 @@ function storageDriver() {
   if (elegido) return elegido;
   if (str("BLOB_READ_WRITE_TOKEN")) return "blob";
   if (str("STORAGE_S3_ENDPOINT") && str("STORAGE_S3_BUCKET")) return "s3";
+  // Con PostgreSQL no hay disco que dure, pero si base de datos: los ficheros
+  // se guardan ahi y publicar la aplicacion no exige crear nada mas.
+  if (/^postgres(ql)?:\/\//i.test(databaseUrl())) return "db";
   return "local";
 }
 

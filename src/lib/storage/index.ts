@@ -89,6 +89,11 @@ function elegirDriver(): StorageDriver {
     return blobDriver;
   }
 
+  if (env.storage.driver === "db") {
+    const { dbDriver } = require("./db") as typeof import("./db");
+    return dbDriver;
+  }
+
   if (env.storage.driver === "s3") {
     const { s3Driver, s3Configurado } = require("./s3") as typeof import("./s3");
     const problema = s3Configurado();

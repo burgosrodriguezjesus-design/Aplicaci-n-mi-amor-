@@ -70,12 +70,12 @@ gratuito da disco que sobreviva a un reinicio**: Render ejecuta la aplicación,
 Neon guarda la base de datos y Cloudflare R2 los PDF. La aplicación no guarda
 nada en sí misma, así que da igual cuántas veces se reinicie.
 
-La forma más corta es **todo dentro de Vercel**: una sola cuenta, sin tarjeta y
-**sin configurar ni una variable**. Creas la base de datos y el almacén de
-ficheros desde el propio panel del proyecto (pestaña *Storage*) y la aplicación
-los reconoce sola; hasta el secreto de las sesiones se genera y se guarda si no
-se lo das. Allí el procesado va por tandas, porque cada petición se corta a los
-60 segundos.
+La forma más corta es **todo dentro de Vercel**, y solo hay que crear una cosa:
+la base de datos. Los PDF se guardan dentro de ella, así que no hace falta
+ningún almacén aparte, ni claves, ni variables, ni tarjeta. Hasta el secreto de
+las sesiones se genera solo.
+
+[**→ Publicar en Vercel**](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fburgosrodriguezjesus-design%2FAplicaci-n-mi-amor-&project-name=estudia&repository-name=estudia&stores=%5B%7B%22type%22%3A%22postgres%22%7D%5D)
 
 El paso a paso, y las otras opciones (Render, tu propio ordenador), están en
 **[`docs/publicar.md`](docs/publicar.md)**.
