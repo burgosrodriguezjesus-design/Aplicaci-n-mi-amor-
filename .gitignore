@@ -22,3 +22,10 @@ src/generated/
 
 .DS_Store
 *.log
+
+# Motor de OCR de la demo (se regenera con scripts/build-demo-assets.mjs)
+demo/assets/
+
+# PDF de prueba grande (se regenera con tests/fixtures/generar-escaneado-largo.py)
+tests/fixtures/escaneado-largo.pdf
+.tmp-demo-web/

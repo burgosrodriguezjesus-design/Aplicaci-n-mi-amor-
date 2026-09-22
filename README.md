@@ -63,9 +63,14 @@ docker compose up --build
 `demo/estudia-demo.html` es una página suelta que lleva el motor dentro y
 funciona abriéndola con doble clic. Sirve para ver el producto en dos minutos.
 Es una versión recortada: el resumen es extractivo, no hay cuenta y usa la voz
-del dispositivo. Publicada como Artifact sí reconoce apuntes escaneados, por
-rangos de páginas y con la cuenta de quien la abre. El detalle está en
-[`demo/README.md`](demo/README.md).
+del dispositivo.
+
+Los **apuntes escaneados** sí funcionan: la página trae su propio motor de
+reconocimiento de texto (Tesseract en WebAssembly, unos 12 MB que genera
+`node scripts/build-demo-assets.mjs`), así que lee las páginas en el propio
+dispositivo aunque el visor no permita enviar imágenes a Claude. Cuando sí lo
+permite, usa a Claude por ser más rápido, y si a mitad deja de poder, sigue solo
+en el dispositivo. El detalle está en [`demo/README.md`](demo/README.md).
 
 ### Comprobar que todo funciona
 
@@ -79,6 +84,14 @@ rechazo de archivos falsos, subida de un PDF de ejemplo, procesamiento,
 comprobación de que el resumen conserva fórmulas y datos numéricos, esquema
 jerárquico, carga de segmentos de audio, progreso, regeneración de un apartado
 suelto, descarga en Markdown, aislamiento entre cuentas y borrado.
+
+La demo tiene además sus propias pruebas en un navegador real, que es donde se
+ve si un PDF escaneado acaba convertido en material de estudio:
+
+```bash
+node scripts/build-demo-assets.mjs
+node tests/demo/run.mjs
+```
 
 ## Temarios completos
 

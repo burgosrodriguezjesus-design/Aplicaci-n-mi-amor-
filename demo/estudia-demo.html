@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="es">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
 <title>EstudIA</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -472,8 +477,9 @@
         <span class="badge" id="ocrScanned">—</span>
       </div>
       <p class="small" style="margin:0 0 12px; color:var(--ink-soft)" id="ocrIntro">
-        Estas páginas son imágenes, no texto. Claude puede leerlas aquí mismo, página
-        a página, y con lo que reconozca montamos el resumen, el esquema y el audio.
+        Estas páginas son imágenes, no texto. Se reconocen aquí mismo —en este
+        dispositivo o con Claude, lo que esté disponible— y con lo reconocido
+        montamos el resumen, el esquema y el audio.
       </p>
 
       <div class="row" style="gap:10px; align-items:flex-end">
@@ -496,10 +502,17 @@
 
       <div class="row" style="margin-top:10px">
         <button class="secondary small" id="ocrAll">Todo el documento</button>
-        <label class="tiny muted" style="display:flex; align-items:center; gap:6px; cursor:pointer">
+        <label class="tiny muted hidden" id="ocrPreciseWrap"
+               style="align-items:center; gap:6px; cursor:pointer">
           <input type="checkbox" id="ocrPrecise" style="margin:0">
           Más preciso (la mitad de rápido)
         </label>
+      </div>
+
+      <div class="row" id="ocrEngineRow" style="margin-top:12px; gap:8px; align-items:center">
+        <span class="tiny muted" style="flex:0 0 auto">Quién lo lee:</span>
+        <button class="ghost small" id="ocrEngineLocal">Este dispositivo</button>
+        <button class="ghost small" id="ocrEngineClaude">Claude</button>
       </div>
 
       <p class="tiny muted" style="margin:10px 0 0" id="ocrCost">
@@ -1763,6 +1776,7 @@ let ocrRunning = false;
 state.scannedPages = [];
 state.usedOcr = false;
 state.ocrDone = 0;
+state.ocrEngine = "local";
 
 /** Páginas del rango elegido que siguen sin texto. */
 function ocrTargets() {
@@ -1798,30 +1812,182 @@ async function offerOcr(scanned, partial) {
   const puente = await detectarClaude();
   ocrSample = puente.sample;
   if (ocrSample) ocrSample.__maxImages = Math.max(1, Math.min(8, puente.maxImages || 2));
+  // «ok» es el único caso en que el visor confirma que admite imágenes.
+  // «dudoso» se prueba igual; si falla, el motor local recoge el trabajo.
+  ocrClaudeListo = Boolean(ocrSample) && puente.motivo !== "sin_imagenes";
 
-  if (!ocrSample) {
-    pararVigilante();
-    $("ocrStart").disabled = true;
-    $("ocrAll").disabled = true;
-    estadoProgreso("No disponible", "Aquí no se puede reconocer el texto");
+  elegirMotor(ocrClaudeListo ? "claude" : "local");
+
+  if (!ocrClaudeListo) {
+    // Ya no es un callejón sin salida: se lee aquí mismo.
     $("ocrIntro").innerHTML =
-      "<strong>Esta vista no puede pedirle nada a Claude</strong>, así que no hay forma de " +
-      "leer unas páginas que son imágenes. No es culpa del PDF." +
-      '<div style="margin-top:8px">Prueba a abrir esta misma página desde ' +
-      "<strong>claude.ai en el navegador</strong>: ahí sí suele poder. Y la aplicación " +
-      "instalada lo hace siempre, con su propio motor y sin gastar consultas.</div>";
-    $("ocrCost").textContent = "";
-    // Las salidas dejan de ser letra pequeña gris.
-    $("ocrExample").className = "primary small";
-    $("ocrOther").className = "secondary small";
-    return;
+      "Estas páginas son imágenes, no texto. <strong>Este visor no deja enviar imágenes a " +
+      "Claude</strong>, así que las va a leer el propio dispositivo: funciona igual, " +
+      "sin gastar consultas y sin conexión una vez cargado.";
+  } else if (puente.motivo === "dudoso") {
+    $("ocrIntro").innerHTML =
+      "Estas páginas son imágenes, no texto. Lo intenta Claude y, si este visor no se lo " +
+      "permite, <strong>sigue solo el dispositivo</strong> sin que tengas que hacer nada.";
   }
+}
 
-  if (puente.motivo !== "ok") {
-    $("ocrCost").innerHTML =
-      "Tu visor no confirma que admita imágenes. <strong>Lo intentamos igual</strong>: si no " +
-      "puede, te lo decimos en cuanto falle la primera consulta.";
+/* ── Motor de lectura local (Tesseract) ──────────────────────
+   Todo lo que necesita (el programa, el motor wasm y el idioma) se
+   sirve junto a esta página, así que funciona en cualquier visor,
+   sin CDN, sin cuenta y sin gastar consultas. Se carga la primera
+   vez que hace falta —unos 5 MB, que el navegador ya guarda— y a
+   partir de ahí lee páginas aunque no haya conexión.              */
+
+const LOCAL_ASSETS = "assets/tess/";
+let localTesseract = null;   // promesa de carga del programa
+let ocrClaudeListo = false;
+
+function assetUrl(rel) {
+  return new URL(LOCAL_ASSETS + rel, document.baseURI).href;
+}
+
+/** Carga tesseract.js una sola vez. */
+function cargarMotorLocal() {
+  if (localTesseract) return localTesseract;
+  localTesseract = new Promise((resolve, reject) => {
+    if (window.Tesseract) { resolve(window.Tesseract); return; }
+    const tag = document.createElement("script");
+    tag.src = assetUrl("tesseract.min.js");
+    tag.onload = () => {
+      if (window.Tesseract) resolve(window.Tesseract);
+      else reject(new Error("motor_local_incompleto"));
+    };
+    tag.onerror = () => reject(new Error("motor_local_no_carga"));
+    document.head.appendChild(tag);
+  }).catch((error) => { localTesseract = null; throw error; });
+  return localTesseract;
+}
+
+/** Cuántas páginas a la vez sin ahogar un móvil. */
+function carrilesLocales() {
+  const nucleos = navigator.hardwareConcurrency || 4;
+  const memoria = navigator.deviceMemory || 4;
+  if (memoria <= 2) return 1;
+  if (memoria <= 4) return Math.min(2, nucleos);
+  return Math.max(1, Math.min(4, Math.floor(nucleos / 2)));
+}
+
+/** Un obrero de Tesseract con el idioma ya dentro. */
+async function nuevoObreroLocal() {
+  const Tess = await cargarMotorLocal();
+  // El obrero lleva el idioma dentro: `langPath` solo marca la ruta que él
+  // mismo intercepta, así que no se descarga nada más.
+  return Tess.createWorker("spa", 1, {
+    workerPath: assetUrl("worker-estudia.js"),
+    corePath: assetUrl("core"),
+    langPath: new URL(LOCAL_ASSETS, document.baseURI).href.replace(/\/$/, ""),
+    gzip: true,
+    workerBlobURL: true,
+    cacheMethod: "write",
+  });
+}
+
+/**
+ * Rasteriza una página a la resolución que Tesseract necesita para
+ * acertar (~1800 px de ancho: por debajo se come tildes y comas).
+ */
+async function pageToCanvasBlob(pageNumber, anchoObjetivo) {
+  const page = await state.pdfDoc.getPage(pageNumber);
+  const base = page.getViewport({ scale: 1 });
+  const scale = Math.max(1, Math.min(3.2, (anchoObjetivo || 1800) / base.width));
+  const viewport = page.getViewport({ scale });
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext("2d", { willReadFrequently: false });
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  page.cleanup();
+
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
+  canvas.width = 0;
+  canvas.height = 0;
+  return blob;
+}
+
+/**
+ * Reconoce aquí mismo el rango pedido. El PDF solo se puede dibujar en
+ * el hilo principal, así que las páginas se rasterizan de una en una y
+ * el reconocimiento —lo lento— va en varios obreros a la vez.
+ */
+async function procesarColaLocal(paginas, onAvance, onAviso) {
+  const cola = paginas.slice();
+  let parado = null;
+  let dibujando = Promise.resolve();
+
+  const siguienteImagen = async (pageNumber) => {
+    const turno = dibujando.then(() => pageToCanvasBlob(pageNumber));
+    dibujando = turno.catch(() => null);
+    return turno;
+  };
+
+  const obreros = [];
+  const carril = async (indice) => {
+    let obrero = null;
+    try {
+      obrero = await nuevoObreroLocal();
+    } catch (error) {
+      if (indice === 0) parado = "motor_local";
+      return;
+    }
+    obreros.push(obrero);
+    if (indice === 0 && onAviso) onAviso();
+
+    for (;;) {
+      if (ocrAbort.signal.aborted || parado) return;
+      const pageNumber = cola.shift();
+      if (!pageNumber) return;
+      try {
+        const blob = await siguienteImagen(pageNumber);
+        if (!blob) continue;
+        const salida = await obrero.recognize(blob);
+        applyOcrText(pageNumber, salida && salida.data && salida.data.text);
+      } catch (error) {
+        // Una página que falla se queda pendiente y se repasa después:
+        // nunca tumba el libro entero.
+        if ((error && error.message) === "motor_local_no_carga") { parado = "motor_local"; return; }
+      }
+      onAvance();
+    }
+  };
+
+  const total = Math.max(1, Math.min(carrilesLocales(), paginas.length));
+  const lanzados = [];
+  for (let i = 0; i < total; i += 1) lanzados.push(carril(i));
+  try {
+    await Promise.all(lanzados);
+  } finally {
+    await Promise.all(obreros.map((o) => o.terminate().catch(() => null)));
   }
+  return parado;
+}
+
+/** Cambia de motor y deja la interfaz contándolo. */
+function elegirMotor(motor) {
+  state.ocrEngine = motor === "claude" && ocrClaudeListo ? "claude" : "local";
+  const local = state.ocrEngine === "local";
+
+  $("ocrEngineLocal").className = local ? "primary small" : "ghost small";
+  $("ocrEngineClaude").className = local ? "ghost small" : "primary small";
+  $("ocrEngineClaude").disabled = !ocrClaudeListo;
+  $("ocrEngineClaude").title = ocrClaudeListo
+    ? "Más rápido y mejor con tablas"
+    : "Este visor no deja enviar imágenes a Claude";
+  $("ocrPreciseWrap").classList.toggle("hidden", local);
+
+  $("ocrCost").textContent = local
+    ? "Lo lee el propio dispositivo, sin cuenta y sin gastar consultas. La primera vez " +
+      "descarga unos 5 MB de motor de lectura; después funciona hasta sin conexión. " +
+      "Puedes pararlo y continuar. Deja esta pantalla abierta."
+    : "Lo lee Claude con tu propia cuenta: varias páginas por consulta y cuatro consultas " +
+      "a la vez. Puedes pararlo y continuar cuando quieras. Deja esta pantalla abierta.";
 }
 
 /**
@@ -1964,7 +2130,12 @@ function ocrErrorMessage(code) {
   }
   if (code === "session_expired") return "Tu sesión ha caducado: vuelve a entrar en Claude.";
   if (code === "images_unavailable") {
-    return "Este visor no deja enviar imágenes a Claude. Abre esta página desde claude.ai en el navegador, o usa la aplicación instalada.";
+    return "Este visor no deja enviar imágenes a Claude. Cambia a «Este dispositivo» y se lee aquí mismo.";
+  }
+  if (code === "motor_local") {
+    return "No se ha podido cargar el lector de este dispositivo (son unos 5 MB). " +
+      "Comprueba la conexión y pulsa «Continuar»; si vuelve a fallar, la aplicación " +
+      "instalada lo hace en el servidor y no necesita descargar nada.";
   }
   if (code === "image_rejected") return "Alguna página no se ha podido enviar como imagen.";
   if (code === "prompt_too_large") return "Esa página trae demasiado texto de una vez.";
@@ -2019,7 +2190,8 @@ async function procesarCola(lotes, tier, total, onAvance) {
 }
 
 async function runOcr() {
-  if (!ocrSample || ocrRunning) return;
+  if (ocrRunning) return;
+  if (state.ocrEngine === "claude" && !ocrSample) elegirMotor("local");
 
   const targets = ocrTargets();
   if (!targets.length) {
@@ -2030,7 +2202,8 @@ async function runOcr() {
 
   ocrRunning = true;
   ocrAbort = new AbortController();
-  arrancarVigilante(180000);
+  // El lector local tarda más la primera vez: se le da más margen.
+  arrancarVigilante(state.ocrEngine === "local" ? 420000 : 180000);
   $("ocrStart").disabled = true;
   $("ocrAll").disabled = true;
   $("ocrBuild").classList.add("hidden");
@@ -2040,10 +2213,6 @@ async function runOcr() {
 
   const preciso = $("ocrPrecise") && $("ocrPrecise").checked;
   const tier = preciso ? "default" : "quick";
-  const size = Math.max(1, Math.min(ocrSample.__maxImages || 1, preciso ? 4 : 8));
-
-  const lotes = [];
-  for (let i = 0; i < targets.length; i += size) lotes.push(targets.slice(i, i + size));
 
   const total = targets.length;
   const inicio = Date.now();
@@ -2073,7 +2242,40 @@ async function runOcr() {
     paint();
   };
 
-  let parado = await procesarCola(lotes, tier, total, avance);
+  /** Divide en lotes del tamaño que admita el visor. */
+  const enLotes = (lista) => {
+    const size = Math.max(1, Math.min((ocrSample && ocrSample.__maxImages) || 1,
+      preciso ? 4 : 8));
+    const lotes = [];
+    for (let i = 0; i < lista.length; i += size) lotes.push(lista.slice(i, i + size));
+    return lotes;
+  };
+
+  const avisoLocal = () => {
+    $("ocrStatus").textContent = "Leyendo aquí mismo, página a página…";
+  };
+
+  const pasada = async (lista, sueltas) => {
+    if (state.ocrEngine === "local") {
+      $("ocrStatus").textContent = "Preparando el lector (solo la primera vez)…";
+      return procesarColaLocal(lista, avance, avisoLocal);
+    }
+    const lotes = sueltas ? lista.map((n) => [n]) : enLotes(lista);
+    return procesarCola(lotes, tier, total, avance);
+  };
+
+  let parado = await pasada(targets, false);
+
+  // Si el visor rechaza las imágenes, no se abandona: sigue el dispositivo.
+  if (parado === "images_unavailable" || parado === "image_rejected") {
+    ocrClaudeListo = false;
+    elegirMotor("local");
+    $("ocrStatus").textContent = "Este visor no deja enviar imágenes: seguimos aquí mismo…";
+    $("ocrCost").innerHTML =
+      "<strong>Claude no puede ver imágenes en este visor</strong>, así que lo está " +
+      "leyendo el propio dispositivo. No tienes que hacer nada.";
+    parado = await pasada(ocrTargets(), false);
+  }
 
   // Segunda pasada: alguna consulta puede devolver el lote incompleto.
   if (!parado && !ocrAbort.signal.aborted) {
@@ -2081,7 +2283,7 @@ async function runOcr() {
     if (faltan.length && faltan.length < total) {
       $("ocrStatus").textContent = "Repasando " + faltan.length +
         (faltan.length === 1 ? " página que faltaba…" : " páginas que faltaban…");
-      parado = await procesarCola(faltan.map((n) => [n]), tier, total, avance);
+      parado = await pasada(faltan, true);
     }
   }
 
@@ -2102,8 +2304,9 @@ async function runOcr() {
   }
 
   if (recuperadas === 0) {
-    $("ocrCost").textContent =
-      "No hemos podido reconocer texto en esas páginas. Prueba con otras o marca «más preciso».";
+    $("ocrCost").textContent = state.ocrEngine === "local"
+      ? "No hemos podido reconocer texto en esas páginas. Puede que estén en blanco o muy borrosas."
+      : "No hemos podido reconocer texto en esas páginas. Prueba con otras o marca «más preciso».";
     return;
   }
 
@@ -2656,6 +2859,8 @@ $("ocrAll").addEventListener("click", () => {
   void runOcr();
 });
 $("ocrBuild").addEventListener("click", () => { void buildFromOcr(); });
+$("ocrEngineLocal").addEventListener("click", () => { if (!ocrRunning) elegirMotor("local"); });
+$("ocrEngineClaude").addEventListener("click", () => { if (!ocrRunning) elegirMotor("claude"); });
 $("ocrStop").addEventListener("click", () => {
   if (ocrAbort) ocrAbort.abort();
   $("ocrStatus").textContent = "Parando…";
