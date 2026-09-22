@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/client/api";
+import { empujarTrabajo } from "@/lib/client/jobs";
 import type { DocumentDetail } from "@/lib/client/types";
 import { STATUS_COPY, formatBytes, formatRelative } from "@/lib/client/format";
 import { Icon } from "@/components/ui/Icon";
@@ -201,6 +202,9 @@ export function DocumentView({ documentId }: { documentId: string }) {
         explanationStyle: scope === "outline" ? undefined : options.explanationStyle,
       });
       setRegenerateScope(null);
+      // Donde no hay servidor, la regeneración avanza por tandas: hay que
+      // empujarla antes de recargar, o no se vería nada nuevo.
+      await empujarTrabajo();
       await load();
       toast({
         title:

@@ -309,6 +309,12 @@ export async function ocrPages(
    * duerme solo- no se pierde el trabajo hecho hasta ese momento.
    */
   onPage?: (result: OcrResult) => void | Promise<void>,
+  /**
+   * Se consulta entre paginas: si devuelve true, se para en seco y se
+   * devuelve lo hecho hasta ese momento. Es lo que permite trocear el
+   * trabajo donde el alojamiento corta las peticiones.
+   */
+  shouldStop?: () => boolean,
 ): Promise<OcrResult[]> {
   const engine = ocrEngine();
   if (engine === "none" || pageNumbers.length === 0) return [];
@@ -336,6 +342,7 @@ export async function ocrPages(
     }
 
     for (;;) {
+      if (shouldStop?.()) return;
       const index = cursor++;
       const batch = batches[index];
       if (!batch) return;
@@ -343,6 +350,7 @@ export async function ocrPages(
       const images = await rasterizeBatch(pdfPath, batch, scale);
 
       for (const pageNumber of batch) {
+        if (shouldStop?.()) return;
         const png = images.get(pageNumber);
         if (png) {
           try {

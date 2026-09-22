@@ -171,13 +171,42 @@ Sirve cualquier sitio que ejecute contenedores. Lo imprescindible:
 
 | Necesita | Por qué |
 | --- | --- |
-| Procesos largos, no *serverless* | Un libro entero tarda minutos, no segundos |
+| Procesos largos, o tandas | Un libro entero tarda minutos; si el sitio corta las peticiones, pon `JOB_SLICE_SECONDS` |
 | Al menos 512 MB de memoria | El reconocimiento rasteriza páginas |
 | Disco persistente **o** PostgreSQL + S3 | Los apuntes tienen que sobrevivir al reinicio |
 | `AUTH_SECRET` fijo | Si cambia, se cierran todas las sesiones |
 
-**Vercel no sirve** para esta aplicación: sus funciones se cortan a los pocos
-segundos y no tienen disco, y aquí procesar un temario dura minutos.
+### En Vercel
+
+Sí funciona, pero conviene saber en qué se parece y en qué no.
+
+**No te ahorra pasos**: Vercel tampoco tiene disco, así que necesitas igualmente
+Neon y Cloudflare R2. Los pasos 1 y 2 de esta guía son los mismos.
+
+**A cambio, no se duerme.** Abre siempre al instante, y no te pide tarjeta.
+
+**Lo que cambia por dentro.** En Vercel cada petición se corta a los 60 segundos
+y entre petición y petición no se ejecuta nada. Por eso el procesado va **por
+tandas**: cada una avanza lo que le da tiempo, guarda lo hecho y la aplicación
+pide la siguiente. Medido aquí: un temario de 402 páginas con texto se hace en
+7,7 segundos —una sola tanda—, y un escaneado avanza a 0,4 s por página, así que
+un libro de 400 páginas escaneadas son unas cuatro tandas.
+
+La consecuencia práctica: **deja la pestaña abierta** mientras procesa un libro
+escaneado largo. Si la cierras, el trabajo se para donde estuviera; al volver a
+abrir el documento sigue por donde iba, sin repetir nada.
+
+Para desplegar: en [vercel.com](https://vercel.com) → **Add New → Project** →
+eliges el repositorio, y en **Environment Variables** pegas los mismos cinco
+datos de la tabla del paso 3, más `AUTH_SECRET` (cualquier texto largo y
+aleatorio; en Render se generaba solo). `JOB_SLICE_SECONDS` y `JOB_BACKGROUND` se
+ajustan solos: la aplicación detecta que está en Vercel.
+
+Una advertencia honesta: el reconocimiento de texto usa un binario nativo para
+rasterizar páginas y 44 MB de motor WebAssembly, y **eso no lo he podido probar
+en el entorno real de Vercel** desde aquí. Los PDF con texto no dependen de nada
+de eso. Si un escaneado falla ahí, el registro de Vercel lo dirá y se arregla;
+mientras tanto, Render sí está probado de arriba abajo.
 
 ### Aplicación nativa de la App Store
 

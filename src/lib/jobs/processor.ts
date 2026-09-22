@@ -52,7 +52,7 @@ import type {
 } from "../ai/prompts";
 import { estimateSeconds } from "../tts/speakify";
 import { segmentScript } from "../tts/segment";
-import { registerHandler, updateJob } from "./queue";
+import { registerHandler, updateJob, type JobOutcome } from "./queue";
 
 export class ProcessingError extends Error {
   code: string;
@@ -79,7 +79,12 @@ async function setStatus(
 }
 
 /** Fases 1 y 2: texto de cada página, con OCR cuando hace falta. */
-async function extractPages(documentId: string, jobId: string, data: Buffer) {
+async function extractPages(
+  documentId: string,
+  jobId: string,
+  data: Buffer,
+  deadline: number,
+) {
   await setStatus(documentId, jobId, "EXTRACTING", "Extrayendo contenido…", 8);
 
   const extraction = await extractPdf(data);
@@ -144,6 +149,8 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
   });
 
   let usedOcr = yaReconocidas.size > 0;
+  /** Paginas reconocidas en esta rebanada. */
+  let reconocidasAhora = 0;
 
   // Solo se reconocen las que siguen sin texto.
   const pendientesDeOcr = extraction.scannedPages.filter((n) => !yaReconocidas.has(n));
@@ -197,6 +204,7 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
           // Cada página se guarda nada más reconocerla, no al final.
           async (result) => {
             usedOcr = true;
+            reconocidasAhora += 1;
             await prisma.documentPage.update({
               where: {
                 documentId_pageNumber: { documentId, pageNumber: result.pageNumber },
@@ -208,6 +216,10 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
               },
             });
           },
+          // Se para al agotarse la rebanada, pero nunca antes de reconocer
+          // una pagina: si no, un documento cuya extraccion ya consume la
+          // rebanada entera no avanzaria jamas.
+          () => reconocidasAhora > 0 && Date.now() >= deadline,
         );
       } finally {
         await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
@@ -229,7 +241,15 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
     data: { textCoverage: coverage, usedOcr },
   });
 
-  if (withText === 0) {
+  // ¿Se ha quedado alguna pagina escaneada sin reconocer por falta de tiempo?
+  const sinReconocer = pages.filter(
+    (pagina) => pagina.source === "EMPTY" && pagina.text.replace(/\s/g, "").length < 40,
+  ).length;
+  const ocrPendiente = sinReconocer > 0 && ocrAvailable() && Date.now() >= deadline;
+
+  // Quedarse sin tiempo no es lo mismo que no tener texto: si aun quedan
+  // paginas por reconocer, esto continua en la siguiente rebanada.
+  if (withText === 0 && !ocrPendiente) {
     throw new ProcessingError(
       "NO_TEXT",
       ocrAvailable()
@@ -245,7 +265,7 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
     if (page.lines && page.lines.length > 0) linesByPage.set(page.pageNumber, page.lines);
   }
 
-  return { pages, pageCount: extraction.pageCount, coverage, linesByPage };
+  return { pages, pageCount: extraction.pageCount, coverage, linesByPage, ocrPendiente };
 }
 
 /** Fase 3: estructura y troceado. */
@@ -272,9 +292,32 @@ export async function buildSummary(opts: {
   chunks: Chunk[];
   ctx: GenerationContext;
   instructions?: string | null;
+  /** Momento en que hay que parar y guardar. Infinito si no hay limite. */
+  deadline?: number;
 }) {
   const { documentId, jobId, chunks, ctx } = opts;
+  const deadline = opts.deadline ?? Number.POSITIVE_INFINITY;
   const analyses: ChunkAnalysis[] = new Array(chunks.length);
+
+  // Lo analizado en una rebanada anterior se reutiliza: con IA, analizar un
+  // apartado cuesta una llamada, y repetirla seria tirar tiempo y dinero.
+  if (!opts.instructions) {
+    const guardadas = await prisma.documentSection.findMany({
+      where: { documentId, analysis: { not: null } },
+      select: { position: true, analysis: true },
+    });
+    const porPosicion = new Map(guardadas.map((s) => [s.position, s.analysis]));
+    chunks.forEach((chunk, index) => {
+      const guardada = porPosicion.get(chunk.position);
+      if (!guardada) return;
+      try {
+        analyses[index] = JSON.parse(guardada) as ChunkAnalysis;
+      } catch {
+        /* si esta corrupta se vuelve a analizar */
+      }
+    });
+  }
+  let seAcaboElTiempo = false;
 
   // Los fragmentos se analizan en paralelo (con un tope) para que un temario
   // completo no tarde horas. El orden del resultado se respeta siempre.
@@ -284,8 +327,16 @@ export async function buildSummary(opts: {
 
   const worker = async () => {
     for (;;) {
+      if (Date.now() >= deadline) {
+        seAcaboElTiempo = true;
+        return;
+      }
       const index = next++;
       if (index >= chunks.length) return;
+      if (analyses[index]) {
+        done += 1;
+        continue;
+      }
 
       const analysis = await analyzeChunk(chunks[index], chunks.length, ctx);
       analyses[index] = analysis;
@@ -307,6 +358,12 @@ export async function buildSummary(opts: {
   };
 
   await Promise.all(Array.from({ length: concurrency }, worker));
+
+  // Si falta algun apartado por analizar, se corta aqui: lo analizado ya esta
+  // guardado en la base de datos y la siguiente rebanada sigue por ahi.
+  if (seAcaboElTiempo && analyses.some((analysis) => !analysis)) {
+    return { pending: true as const };
+  }
 
   await setStatus(documentId, jobId, "SUMMARIZING", "Uniendo el resumen global…", 78);
   const intro = await synthesize(analyses, ctx);
@@ -485,7 +542,8 @@ async function handleProcessDocument(job: {
   id: string;
   documentId: string;
   payload: Record<string, unknown>;
-}) {
+  deadline: number;
+}): Promise<JobOutcome> {
   const document = await prisma.document.findUnique({ where: { id: job.documentId } });
   if (!document) throw new ProcessingError("NOT_FOUND", "El documento ya no existe.");
 
@@ -505,7 +563,7 @@ async function handleProcessDocument(job: {
 
   let extracted;
   try {
-    extracted = await extractPages(job.documentId, job.id, data);
+    extracted = await extractPages(job.documentId, job.id, data, job.deadline);
   } catch (error) {
     if (error instanceof PdfProtectedError) {
       throw new ProcessingError(
@@ -528,6 +586,15 @@ async function handleProcessDocument(job: {
     }…`,
     32,
   );
+
+  // Si el reconocimiento se ha quedado a medias por falta de tiempo, aqui se
+  // corta: lo hecho ya esta guardado y la siguiente rebanada sigue por ahi.
+  if (extracted.ocrPendiente) {
+    return {
+      pending: true,
+      message: "Reconociendo el texto por tandas…",
+    };
+  }
 
   const pageTexts = extracted.pages.map((page) => ({
     pageNumber: page.pageNumber,
@@ -567,12 +634,17 @@ async function handleProcessDocument(job: {
     style: document.explanationStyle as ExplanationStyle,
   };
 
-  const { summary, analyses } = await buildSummary({
+  const resumen = await buildSummary({
     documentId: job.documentId,
     jobId: job.id,
     chunks,
     ctx,
+    deadline: job.deadline,
   });
+  if ("pending" in resumen) {
+    return { pending: true, message: "Creando el resumen por tandas…" };
+  }
+  const { summary, analyses } = resumen;
 
   await buildOutline({
     documentId: job.documentId,
@@ -606,7 +678,8 @@ async function handleRegenerateSummary(job: {
   id: string;
   documentId: string;
   payload: Record<string, unknown>;
-}) {
+  deadline: number;
+}): Promise<JobOutcome> {
   const document = await prisma.document.findUnique({ where: { id: job.documentId } });
   if (!document) throw new ProcessingError("NOT_FOUND", "El documento ya no existe.");
 
@@ -656,13 +729,18 @@ async function handleRegenerateSummary(job: {
   });
 
   const instructions = (job.payload.instructions as string) ?? null;
-  const { summary, analyses } = await buildSummary({
+  const resumen = await buildSummary({
     documentId: job.documentId,
     jobId: job.id,
     chunks,
     ctx,
     instructions,
+    deadline: job.deadline,
   });
+  if ("pending" in resumen) {
+    return { pending: true, message: "Rehaciendo el resumen por tandas…" };
+  }
+  const { summary, analyses } = resumen;
 
   if (job.payload.regenerateOutline !== false) {
     await buildOutline({

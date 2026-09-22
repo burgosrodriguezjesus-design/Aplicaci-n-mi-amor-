@@ -1299,6 +1299,11 @@ const IMPORTANT_RE = /\b(importante|fundamental|clave|recuerda|obligatorio|atenc
 const VINETA_RE = /^\s*(?:[-–—•·▪o*]\s+|\(?[a-z]\)\s+|\(?\d{1,2}\)\s+|\d{1,2}[.)]\s+(?=[a-záéíóúñ]))/;
 /** Frases que anuncian una clasificación: nunca deberían caerse del resumen. */
 const ENUMERA_RE = /\b(se clasifican|se dividen|se distinguen|tipos de|clases de|consta de|se compone|comprende|existen \w+ tipos|los siguientes|las siguientes)\b/i;
+/**
+ * Frases que dicen en qué se mide algo. No llevan número, así que no cuentan
+ * como dato, pero «se mide en amperios» es justo lo que se pregunta.
+ */
+const UNIDAD_RE = /\b(se mide en|se miden en|su unidad es|sus unidades son|se expresa en|se expresan en|viene dado en|viene dada en|unidad de medida)\b/i;
 /** Un dato con unidad o porcentaje: es contenido examinable, no relleno. */
 const DATO_RE =
   /\d+\s*(?:%|€|ºC|°C|m²|m2|km²)|\d+\s*(?:km|cm|mm|kg|g|s|h|min|V|A|W|kW|MW|Hz|Ω|euros?|años?|días?|meses)\b/;
@@ -1446,7 +1451,8 @@ function pageLabel(pages) {
 /** Lo que no se puede perder aunque puntúe bajo. */
 function imprescindible(texto) {
   return DEFINITION_RE.test(texto) || FORMULA_RE.test(texto) ||
-    IMPORTANT_RE.test(texto) || ENUMERA_RE.test(texto) || DATO_RE.test(texto);
+    IMPORTANT_RE.test(texto) || ENUMERA_RE.test(texto) ||
+    UNIDAD_RE.test(texto) || DATO_RE.test(texto);
 }
 
 /** Dos frases que dicen lo mismo con otras comas no valen el doble. */

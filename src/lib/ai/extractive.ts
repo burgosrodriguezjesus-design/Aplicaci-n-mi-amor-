@@ -37,6 +37,53 @@ const FORMULA_RE = /(^|\s)[A-Za-zα-ω][\w₀-₉]*\s*=\s*[^.;]{2,60}/;
 const NUMBER_RE = /\d/;
 const IMPORTANT_RE =
   /\b(importante|fundamental|clave|recuerda|obligatorio|atencion|no confundir|examen|debe|siempre|nunca)\b/i;
+/** Frases que anuncian una clasificacion: son justo lo que se estudia. */
+const ENUMERA_RE =
+  /\b(se clasifican|se dividen|se distinguen|tipos de|clases de|consta de|se compone|comprende|los siguientes|las siguientes)\b/i;
+/** Un dato con unidad o porcentaje es contenido examinable, no relleno. */
+const DATO_RE =
+  /\d+\s*(?:%|€|ºC|°C|m²|m2)|\d+\s*(?:km|cm|mm|kg|g|s|h|min|V|A|W|kW|MW|Hz|Ω|euros?|años?|anos?|dias?|días?|meses)\b/;
+/**
+ * Frases que dicen en que se mide algo. No llevan numero, asi que no cuentan
+ * como dato, pero "se mide en amperios" es justo lo que se pregunta.
+ */
+const UNIDAD_RE =
+  /\b(se mide en|se miden en|su unidad es|sus unidades son|se expresa en|se expresan en|viene dado en|viene dada en|unidad de medida)\b/i;
+/** Guiones, topos y enumeradores al principio de linea. */
+const VINETA_RE =
+  /^\s*(?:[-–—•·▪o*]\s+|\(?[a-z]\)\s+|\(?\d{1,2}\)\s+|\d{1,2}[.)]\s+(?=[a-záéíóúñ]))/;
+
+/**
+ * Lo que no puede caerse del resumen aunque puntue bajo.
+ *
+ * Elegir frases por su carga de informacion funciona de media, pero se deja
+ * fuera justo lo que luego se pregunta: una definicion corta, una
+ * clasificacion, un aviso o un dato con unidades ("se mide en amperios").
+ */
+function imprescindible(texto: string) {
+  return (
+    DEFINITION_RE.test(texto) ||
+    FORMULA_RE.test(texto) ||
+    IMPORTANT_RE.test(texto) ||
+    ENUMERA_RE.test(texto) ||
+    UNIDAD_RE.test(texto) ||
+    DATO_RE.test(texto)
+  );
+}
+
+/** Dos frases que dicen lo mismo con otras comas no valen el doble. */
+function clavePorFrase(texto: string) {
+  return texto
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9ñ ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .slice(0, 14)
+    .join(" ");
+}
 
 type Sentence = { text: string; page: number; score: number; index: number };
 type Heading = { kind: "heading"; level: number; text: string; index: number };
@@ -285,6 +332,22 @@ export function extractiveChunkSummary(
       .map((sentence) => sentence.index),
   );
 
+  // Definiciones, formulas, clasificaciones, avisos y datos con unidades
+  // entran siempre, puntuen lo que puntuen.
+  for (const sentence of sentences) {
+    if (imprescindible(sentence.text)) kept.add(sentence.index);
+  }
+
+  // Y fuera repeticiones: un temario repite la misma frase en cada apartado.
+  const vistas = new Set<string>();
+  for (const sentence of sentences) {
+    if (!kept.has(sentence.index)) continue;
+    const clave = clavePorFrase(sentence.text);
+    if (clave.length < 12) continue;
+    if (vistas.has(clave)) kept.delete(sentence.index);
+    else vistas.add(clave);
+  }
+
   const selected = sentences.filter((sentence) => kept.has(sentence.index));
   const pages = [...new Set(selected.map((sentence) => sentence.page))].sort((a, b) => a - b);
   const headings = items.filter((item): item is Heading => item.kind === "heading");
@@ -318,6 +381,15 @@ export function extractiveChunkSummary(
       flush();
       currentPage = item.page;
     }
+    // Una lista es una lista: deshecha en prosa se pierde la enumeracion,
+    // que es justo lo que se memoriza.
+    if (VINETA_RE.test(item.text)) {
+      flush();
+      const elemento = item.text.replace(VINETA_RE, "").trim();
+      body.push(`- ${imprescindible(elemento) ? `**${elemento}**` : elemento}`);
+      continue;
+    }
+
     const highlighted = IMPORTANT_RE.test(item.text) ? `**${item.text}**` : item.text;
     paragraph.push(highlighted);
     if (paragraph.length >= 4) flush();

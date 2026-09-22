@@ -9,13 +9,31 @@
  */
 import "server-only";
 import { prisma } from "../db";
+import { env } from "../env";
+
+/**
+ * Lo que devuelve un manejador cuando se le acaba el tiempo de la rebanada:
+ * ha guardado lo hecho y hay que volver a llamarlo para seguir.
+ */
+export type JobOutcome = void | { pending: true; message?: string };
 
 type JobHandler = (job: {
   id: string;
   documentId: string;
   type: string;
   payload: Record<string, unknown>;
-}) => Promise<void>;
+  /**
+   * Momento (Date.now()) a partir del cual hay que parar y guardar. Solo se
+   * define cuando el alojamiento corta las peticiones; si no, es Infinity.
+   */
+  deadline: number;
+}) => Promise<JobOutcome>;
+
+/** Cuando debe terminar esta rebanada de trabajo. */
+export function sliceDeadline() {
+  const segundos = env.jobs.sliceSeconds;
+  return segundos > 0 ? Date.now() + segundos * 1000 : Number.POSITIVE_INFINITY;
+}
 
 const handlers = new Map<string, JobHandler>();
 let running = false;
@@ -33,7 +51,8 @@ export async function enqueue(
     data: { documentId, type, payload: JSON.stringify(payload) },
   });
   // No bloqueamos la respuesta HTTP: el trabajo corre en segundo plano.
-  void runQueue();
+  // Donde no hay servidor, no hay segundo plano: avanza por rebanadas.
+  if (env.jobs.background) void runQueue();
   return job;
 }
 
@@ -62,17 +81,32 @@ export async function recoverStuckJobs() {
   });
 }
 
-export async function runQueue() {
-  if (running) return;
+/**
+ * Procesa trabajos hasta que no quede ninguno o se acabe el tiempo.
+ *
+ * Devuelve si queda trabajo pendiente, para que quien la llamó sepa si tiene
+ * que volver a llamar (es lo que hace la aplicación en un alojamiento que
+ * corta las peticiones).
+ */
+export async function runQueue(opts: { deadline?: number } = {}): Promise<{ pending: boolean }> {
+  if (running) return { pending: true };
   running = true;
+  const deadline = opts.deadline ?? sliceDeadline();
 
   try {
     for (;;) {
+      if (Date.now() >= deadline) {
+        const quedan = await prisma.processingJob.count({
+          where: { status: { in: ["QUEUED", "RUNNING"] } },
+        });
+        return { pending: quedan > 0 };
+      }
+
       const job = await prisma.processingJob.findFirst({
         where: { status: "QUEUED" },
         orderBy: { createdAt: "asc" },
       });
-      if (!job) break;
+      if (!job) return { pending: false };
 
       const handler = handlers.get(job.type);
       if (!handler) {
@@ -98,12 +132,28 @@ export async function runQueue() {
       });
 
       try {
-        await handler({
+        const resultado = await handler({
           id: job.id,
           documentId: job.documentId,
           type: job.type,
           payload: JSON.parse(job.payload || "{}"),
+          deadline,
         });
+
+        if (resultado && resultado.pending) {
+          // Se acabó el tiempo de la rebanada, no es un fallo: el trabajo
+          // vuelve a la cola tal cual y el intento no cuenta.
+          await prisma.processingJob.update({
+            where: { id: job.id },
+            data: {
+              status: "QUEUED",
+              attempts: { decrement: 1 },
+              message: resultado.message ?? "Continuará en unos segundos…",
+            },
+          });
+          return { pending: true };
+        }
+
         await prisma.processingJob.update({
           where: { id: job.id },
           data: {

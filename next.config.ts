@@ -10,6 +10,19 @@ const nextConfig: NextConfig = {
     "@napi-rs/canvas",
     "tesseract.js",
   ],
+  // El reconocimiento de texto rasteriza cada pagina en un proceso aparte y
+  // usa un motor compilado a WebAssembly. Ninguno de los dos se descubre
+  // siguiendo los `import`, asi que hay que nombrarlos para que viajen al
+  // servidor (imprescindible en alojamientos que empaquetan cada ruta).
+  outputFileTracingIncludes: {
+    "/api/**": [
+      "./scripts/raster-worker.mjs",
+      "./node_modules/tesseract.js/src/**",
+      "./node_modules/tesseract.js-core/*.js",
+      "./node_modules/tesseract.js-core/*.wasm",
+      "./node_modules/@napi-rs/canvas*/**",
+    ],
+  },
   experimental: {
     // Los PDFs se suben por streaming a traves de rutas de API, no server actions.
     serverActions: { bodySizeLimit: "2mb" },

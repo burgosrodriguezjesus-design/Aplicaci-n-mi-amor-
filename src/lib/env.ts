@@ -16,6 +16,12 @@ function int(name: string, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function bool(name: string, fallback: boolean): boolean {
+  const value = process.env[name];
+  if (value === undefined || value === "") return fallback;
+  return !/^(0|false|no)$/i.test(value);
+}
+
 const authSecret = str("AUTH_SECRET");
 
 if (!authSecret && process.env.NODE_ENV === "production") {
@@ -69,6 +75,28 @@ export const env = {
       accessKeyId: str("STORAGE_S3_ACCESS_KEY_ID"),
       secretAccessKey: str("STORAGE_S3_SECRET_ACCESS_KEY"),
     },
+  },
+
+  jobs: {
+    /**
+     * Segundos de trabajo por rebanada. 0 = sin limite (un servidor normal,
+     * que puede estar procesando minutos seguidos).
+     *
+     * En un alojamiento sin servidor -Vercel y parecidos- cada peticion se
+     * corta a los 60 segundos, asi que el procesado se parte en rebanadas que
+     * se encadenan solas. Ahi se pone 45 por defecto, que deja margen para
+     * guardar y responder.
+     */
+    sliceSeconds: int("JOB_SLICE_SECONDS", process.env.VERCEL ? 45 : 0),
+    /**
+     * Si la cola puede correr en segundo plano tras responder una peticion.
+     *
+     * En un servidor normal, si. Donde no hay servidor, la funcion muere en
+     * cuanto responde: arrancar una cola de fondo alli solo sirve para dejar
+     * trabajos a medias marcados como "en curso". Ahi el trabajo avanza
+     * unicamente por las rebanadas que pide la aplicacion.
+     */
+    background: bool("JOB_BACKGROUND", !process.env.VERCEL),
   },
 
   limits: {

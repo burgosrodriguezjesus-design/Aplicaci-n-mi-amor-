@@ -83,15 +83,27 @@ if (!documentId) {
   process.exit(1);
 }
 
-let status = null;
-const deadline = Date.now() + 180_000;
-while (Date.now() < deadline) {
-  await new Promise((resolve) => setTimeout(resolve, 1500));
-  const poll = await call(`/api/documents/${documentId}/status`);
-  status = poll.body?.document;
-  if (!status) break;
-  if (status.status === "READY" || status.status === "FAILED") break;
+
+/**
+ * Espera a que un documento termine, empujando el trabajo como hace la propia
+ * aplicacion. En un servidor normal la cola va sola y esto no cambia nada; en
+ * un alojamiento sin servidor es lo unico que hace avanzar el procesado.
+ */
+async function esperarDocumento(id, milisegundos = 180_000) {
+  const limite = Date.now() + milisegundos;
+  let ultimo = null;
+  while (Date.now() < limite) {
+    const rebanada = await call("/api/jobs/tick", { method: "POST" });
+    const sondeo = await call(`/api/documents/${id}/status`);
+    ultimo = sondeo.body?.document ?? null;
+    if (!ultimo) break;
+    if (ultimo.status === "READY" || ultimo.status === "FAILED") break;
+    if (!rebanada.body?.pending) await new Promise((r) => setTimeout(r, 800));
+  }
+  return ultimo;
 }
+
+const status = await esperarDocumento(documentId);
 check(
   "el procesamiento termina correctamente",
   status?.status === "READY",
@@ -171,16 +183,7 @@ scanForm.append("title", "Apuntes escaneados");
 const scanUpload = await call("/api/documents", { method: "POST", body: scanForm });
 const scanId = scanUpload.body?.document?.id;
 
-let scanStatus = null;
-if (scanId) {
-  const scanDeadline = Date.now() + 240_000;
-  while (Date.now() < scanDeadline) {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    scanStatus = (await call(`/api/documents/${scanId}/status`)).body?.document;
-    if (!scanStatus) break;
-    if (scanStatus.status === "READY" || scanStatus.status === "FAILED") break;
-  }
-}
+const scanStatus = await esperarDocumento(scanId, 240_000);
 
 if (scanStatus?.status === "READY") {
   check("se reconoce el texto de un PDF escaneado", scanStatus.usedOcr === true);

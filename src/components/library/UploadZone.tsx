@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, uploadDocument, type UploadHandle } from "@/lib/client/api";
+import { empujarTrabajo } from "@/lib/client/jobs";
 import {
   DEPTH_OPTIONS,
   LEVEL_OPTIONS,
@@ -99,6 +100,9 @@ export function UploadZone() {
     };
 
     void tick();
+    // Donde no hay servidor de verdad, el trabajo avanza porque la propia
+    // aplicación va pidiendo rebanadas mientras el documento se procesa.
+    void empujarTrabajo({ cancelado: () => cancelled });
     const interval = setInterval(tick, 1500);
     return () => {
       cancelled = true;
