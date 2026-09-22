@@ -61,9 +61,11 @@ docker compose up --build
 ### Opción C · solo mirar, sin instalar nada
 
 `demo/estudia-demo.html` es una página suelta que lleva el motor dentro y
-funciona abriéndola con doble clic. Sirve para ver el producto en dos minutos,
-pero es una versión recortada: sin IA, sin OCR, sin cuenta y con la voz del
-dispositivo. El detalle está en [`demo/README.md`](demo/README.md).
+funciona abriéndola con doble clic. Sirve para ver el producto en dos minutos.
+Es una versión recortada: el resumen es extractivo, no hay cuenta y usa la voz
+del dispositivo. Publicada como Artifact sí reconoce apuntes escaneados, por
+rangos de páginas y con la cuenta de quien la abre. El detalle está en
+[`demo/README.md`](demo/README.md).
 
 ### Comprobar que todo funciona
 

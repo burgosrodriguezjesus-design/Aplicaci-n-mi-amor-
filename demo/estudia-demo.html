@@ -383,13 +383,14 @@
       <div class="row" style="gap:8px">
         <span class="badge accent">Demo · todo ocurre en tu navegador</span>
         <span class="badge">Sin cuenta</span>
-        <span class="badge">Sin subir nada a ningún servidor</span>
+        <span class="badge">El PDF no sale del dispositivo</span>
       </div>
       <p class="small muted" style="margin:10px 0 0">
         Esta página lleva dentro el mismo motor que la aplicación: lectura del PDF,
-        detección del temario, resumen, esquema y adaptación a voz. Lo único que no
-        está aquí es la parte que necesita servidor: la reescritura con IA, tu cuenta
-        y la sincronización entre dispositivos.
+        detección del temario, resumen, esquema y adaptación a voz. Si tus apuntes están
+        escaneados, Claude puede leerlos aquí mismo. Lo que no está aquí es la parte que
+        necesita servidor: la reescritura con IA, tu cuenta y la sincronización entre
+        dispositivos.
       </p>
     </div>
 
@@ -455,6 +456,55 @@
       </ul>
     </div>
     <div id="workError" class="notice hidden" style="margin-top:12px"></div>
+
+    <!-- Reconocimiento de texto para PDF escaneados -->
+    <div id="ocrPanel" class="card pad hidden" style="margin-top:12px">
+      <div class="row" style="gap:8px; margin-bottom:8px">
+        <span class="badge accent">Reconocimiento de texto</span>
+        <span class="badge" id="ocrScanned">—</span>
+      </div>
+      <p class="small" style="margin:0 0 12px; color:var(--ink-soft)" id="ocrIntro">
+        Estas páginas son imágenes, no texto. Claude puede leerlas aquí mismo, página
+        a página, y con lo que reconozca montamos el resumen, el esquema y el audio.
+      </p>
+
+      <div class="row" style="gap:10px; align-items:flex-end">
+        <label class="small" style="flex:0 0 auto">
+          Desde la página<br>
+          <input type="number" id="ocrFrom" min="1" value="1"
+                 style="width:90px; margin-top:4px; padding:7px 9px; border-radius:9px;
+                        border:1px solid var(--border-strong); background:var(--surface);
+                        color:var(--ink); font:inherit">
+        </label>
+        <label class="small" style="flex:0 0 auto">
+          hasta la<br>
+          <input type="number" id="ocrTo" min="1" value="10"
+                 style="width:90px; margin-top:4px; padding:7px 9px; border-radius:9px;
+                        border:1px solid var(--border-strong); background:var(--surface);
+                        color:var(--ink); font:inherit">
+        </label>
+        <button class="primary" id="ocrStart" style="flex:0 0 auto">Leer estas páginas</button>
+      </div>
+
+      <p class="tiny muted" style="margin:10px 0 0" id="ocrCost">
+        Cada página es una consulta a Claude con tu propia cuenta. Empieza por unas pocas.
+      </p>
+
+      <div id="ocrProgress" class="hidden" style="margin-top:14px">
+        <div class="row" style="justify-content:space-between; margin-bottom:6px">
+          <span class="small" id="ocrStatus">Reconociendo…</span>
+          <button class="ghost small" id="ocrStop">Parar</button>
+        </div>
+        <div class="bar"><span id="ocrBar"></span></div>
+        <pre id="ocrPreview" class="tiny muted" style="margin:10px 0 0; max-height:110px;
+             overflow:auto; white-space:pre-wrap; font-family:inherit"></pre>
+      </div>
+
+      <div class="row" style="margin-top:12px">
+        <button class="secondary small" id="ocrExample">Ver el ejemplo en su lugar</button>
+        <button class="ghost small" id="ocrOther">Probar con otro PDF</button>
+      </div>
+    </div>
   </section>
 
   <!-- ── Documento listo ──────────────────────────────────── -->
@@ -544,8 +594,8 @@
   <footer class="foot">
     <h2>Qué estás viendo</h2>
     <ul>
-      <li><strong>Sí funciona aquí:</strong> lectura del PDF, detección de temas y apartados, resumen fiel con referencias a página, esquema jerárquico y audio con texto sincronizado.</li>
-      <li><strong>Solo en la versión completa:</strong> reescritura y simplificación con IA, OCR de páginas escaneadas, cuenta de usuario, biblioteca por asignaturas, progreso sincronizado y voz de servidor para escuchar con la pantalla bloqueada.</li>
+      <li><strong>Sí funciona aquí:</strong> lectura del PDF, reconocimiento de texto de páginas escaneadas (con tu propia cuenta de Claude), detección de temas y apartados, resumen fiel con referencias a página, esquema jerárquico y audio con texto sincronizado.</li>
+      <li><strong>Solo en la versión completa:</strong> reescritura y simplificación con IA, reconocimiento de libros enteros de una tirada, cuenta de usuario, biblioteca por asignaturas, progreso sincronizado y voz de servidor para escuchar con la pantalla bloqueada.</li>
     </ul>
     <p style="margin:0">
       El resumen de esta demo es <strong>extractivo</strong>: selecciona frases literales del PDF
@@ -1551,38 +1601,25 @@ async function processPdf(buffer, name, sizeBytes) {
     state.pages = extraction.pages;
     state.pageCount = extraction.pageCount;
 
-    const withText = state.pages.filter((p) => p.text.replace(/\s/g, "").length >= 25).length;
-    const charsFound = state.pages.reduce((sum, p) => sum + p.text.replace(/\s/g, "").length, 0);
-    if (withText === 0 && charsFound < 200) {
-      showScannedNotice(state.pageCount);
+    const scanned = state.pages
+      .filter((p) => p.text.replace(/\s/g, "").length < 25)
+      .map((p) => p.pageNumber);
+
+    if (scanned.length === state.pageCount) {
+      // Ninguna página lleva texto: hay que reconocerlo antes de seguir.
+      await offerOcr(scanned);
       return;
     }
-    if (withText < state.pageCount * 0.6) {
+    if (scanned.length > state.pageCount * 0.4) {
       $("workError").innerHTML =
-        "<strong>Solo hemos encontrado texto en " + withText + " de " + state.pageCount +
-        " páginas.</strong> El resto son imágenes, así que ese contenido no aparecerá en el resumen.";
+        "<strong>" + scanned.length + " de " + state.pageCount +
+        " páginas son imágenes.</strong> Puedes reconocer su texto abajo, o seguir sin ellas.";
       $("workError").classList.remove("hidden");
+      await offerOcr(scanned, true);
+      return;
     }
 
-    setPhase("struct", "run");
-    setProgress(56, state.pageCount + (state.pageCount === 1 ? " página" : " páginas") + " · " + formatBytes(sizeBytes));
-    await nextFrame();
-    const totalChars = state.pages.reduce((sum, p) => sum + p.text.length, 0);
-    state.chunks = buildChunks(state.pages, chunkOptionsFor(totalChars, 80));
-    state.headings = detectHeadings(state.pages);
-    setPhase("struct", "done");
-
-    await rebuildStudyMaterial(true);
-
-    $("working").classList.add("hidden");
-    $("workError").classList.add("hidden");
-    $("doc").classList.remove("hidden");
-    $("docTitle").textContent = state.title;
-    $("docMeta").textContent = state.pageCount + (state.pageCount === 1 ? " página · " : " páginas · ") +
-      formatBytes(sizeBytes) + " · " + state.analyses.length +
-      (state.analyses.length === 1 ? " apartado" : " apartados");
-    selectTab("summary");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    await finishProcessing();
   } catch (error) {
     const box = $("workError");
     box.textContent = error && error.message ? error.message : "No hemos podido procesar el documento.";
@@ -1591,37 +1628,194 @@ async function processPdf(buffer, name, sizeBytes) {
   }
 }
 
-/**
- * Un PDF hecho de fotos (escaneado con el móvil, por ejemplo) no lleva texto
- * que leer. Se explica qué ha pasado y qué se puede hacer, en vez de dejar un
- * error seco.
- */
-function showScannedNotice(pageCount) {
-  setProgress(0);
-  const box = $("workError");
-  box.innerHTML =
-    "<strong>Estos apuntes están escaneados.</strong> Hemos abierto el PDF y leído sus " +
-    pageCount + (pageCount === 1 ? " página" : " páginas") +
-    ", pero no llevan texto: son fotos. Para leerlos hace falta reconocimiento de texto (OCR), " +
-    "y eso no se puede hacer dentro de esta página porque el navegador no puede descargar aquí el motor." +
-    '<div style="margin-top:10px; line-height:1.7">La aplicación completa sí los lee, y ya no necesita ninguna clave: ' +
-    "el motor de reconocimiento viene incluido al instalarla.</div>" +
-    '<div class="row" style="margin-top:12px">' +
-      '<button class="primary" id="tryExample">Ver cómo funciona con el ejemplo</button>' +
-      '<button class="secondary" id="tryOther">Probar con otro PDF</button>' +
-    "</div>";
-  box.classList.remove("hidden");
+/** Estructura, resumen, esquema y audio a partir del texto ya disponible. */
+async function finishProcessing() {
+  setPhase("struct", "run");
+  setProgress(56, state.pageCount + (state.pageCount === 1 ? " página" : " páginas") +
+    (state.usedOcr ? " · texto reconocido" : ""));
+  await nextFrame();
 
-  $("tryExample").addEventListener("click", () => {
-    box.classList.add("hidden");
-    $("sampleBtn").click();
-  });
-  $("tryOther").addEventListener("click", () => {
-    box.classList.add("hidden");
-    $("working").classList.add("hidden");
-    $("intake").classList.remove("hidden");
-    $("file").value = "";
-  });
+  const totalChars = state.pages.reduce((sum, p) => sum + p.text.length, 0);
+  state.chunks = buildChunks(state.pages, chunkOptionsFor(totalChars, 80));
+  state.headings = detectHeadings(state.pages);
+  setPhase("struct", "done");
+
+  await rebuildStudyMaterial(true);
+
+  $("working").classList.add("hidden");
+  $("workError").classList.add("hidden");
+  $("ocrPanel").classList.add("hidden");
+  $("doc").classList.remove("hidden");
+  $("docTitle").textContent = state.title;
+  $("docMeta").textContent = state.pageCount + (state.pageCount === 1 ? " página · " : " páginas · ") +
+    formatBytes(state.sizeBytes) + " · " + state.analyses.length +
+    (state.analyses.length === 1 ? " apartado" : " apartados") +
+    (state.usedOcr ? " · texto reconocido" : "");
+  selectTab("summary");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+/* ── Reconocimiento de texto (OCR) con Claude ────────────────
+   Las páginas escaneadas se rasterizan aquí y se le piden a Claude
+   como imágenes. Corre con la cuenta de quien mira la página, así
+   que se pide permiso y se procesan solo las páginas elegidas.     */
+
+let ocrAbort = null;
+let ocrSample = null;
+state.scannedPages = [];
+state.usedOcr = false;
+
+async function offerOcr(scanned, partial) {
+  setProgress(52);
+  state.scannedPages = scanned;
+
+  const panel = $("ocrPanel");
+  panel.classList.remove("hidden");
+  $("ocrScanned").textContent = scanned.length +
+    (scanned.length === 1 ? " página sin texto" : " páginas sin texto");
+  $("ocrFrom").value = String(scanned[0]);
+  $("ocrFrom").max = String(state.pageCount);
+  $("ocrTo").value = String(scanned[Math.min(9, scanned.length - 1)]);
+  $("ocrTo").max = String(state.pageCount);
+
+  if (partial) {
+    $("ocrIntro").textContent =
+      "Parte del documento son imágenes. Claude puede leerlas aquí mismo y añadirlas al resumen.";
+  }
+
+  // ¿Puede esta página pedirle a Claude que mire imágenes?
+  ocrSample = null;
+  try {
+    const sample = window.claude && (await window.claude.use("sample"));
+    if (sample) {
+      const limits = await sample.limits().catch(() => null);
+      if (limits && limits.images) ocrSample = sample;
+    }
+  } catch (error) {
+    ocrSample = null;
+  }
+
+  if (!ocrSample) {
+    $("ocrStart").disabled = true;
+    $("ocrCost").innerHTML =
+      "Aquí no se puede usar el reconocimiento de texto (tu cuenta o este visor no lo permiten). " +
+      "<strong>La aplicación completa sí lo hace</strong>, con el motor incluido y sin ninguna clave.";
+  }
+}
+
+/** Rasteriza una página del PDF a JPEG para enviársela a Claude. */
+async function pageToBlob(pageNumber, maxWidth) {
+  const page = await state.pdfDoc.getPage(pageNumber);
+  const base = page.getViewport({ scale: 1 });
+  const scale = Math.min(2.5, (maxWidth || 1500) / base.width);
+  const viewport = page.getViewport({ scale });
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  page.cleanup();
+
+  return await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+}
+
+const OCR_PROMPT =
+  "Eres un sistema de OCR. La imagen es una página escaneada de unos apuntes. " +
+  "Transcribe literalmente todo su texto, respetando títulos, numeración, listas, " +
+  "fórmulas y tablas. No resumas, no interpretes y no añadas nada que no esté escrito. " +
+  "Si una zona es ilegible escribe [ilegible]. Si la página no tiene texto responde " +
+  "exactamente: [sin texto]. Responde solo con la transcripción.";
+
+async function runOcr() {
+  if (!ocrSample) return;
+
+  const from = Math.max(1, Number($("ocrFrom").value) || 1);
+  const to = Math.min(state.pageCount, Number($("ocrTo").value) || from);
+  const targets = state.scannedPages.filter((n) => n >= from && n <= to);
+
+  if (!targets.length) {
+    $("ocrCost").textContent = "En ese rango no hay páginas sin texto. Prueba con otro.";
+    return;
+  }
+
+  ocrAbort = new AbortController();
+  $("ocrStart").disabled = true;
+  $("ocrProgress").classList.remove("hidden");
+  $("ocrPreview").textContent = "";
+
+  let done = 0;
+  let recovered = 0;
+
+  const paint = () => {
+    $("ocrStatus").textContent = "Reconociendo página " + Math.min(done + 1, targets.length) +
+      " de " + targets.length + "…";
+    $("ocrBar").style.width = Math.round((done / targets.length) * 100) + "%";
+  };
+  paint();
+
+  try {
+    for (const pageNumber of targets) {
+      if (ocrAbort.signal.aborted) break;
+
+      const blob = await pageToBlob(pageNumber, 1500);
+      if (!blob) { done += 1; paint(); continue; }
+
+      const answer = await ocrSample(
+        OCR_PROMPT + "\n\n(Página " + pageNumber + " de " + state.pageCount + ")",
+        { images: [blob], signal: ocrAbort.signal, modelTier: "default" },
+      );
+
+      const text = (answer.text || "").trim();
+      if (text && text !== "[sin texto]") {
+        const target = state.pages.find((p) => p.pageNumber === pageNumber);
+        if (target) target.text = text;
+        recovered += 1;
+        $("ocrPreview").textContent = text.slice(0, 400);
+      }
+
+      done += 1;
+      paint();
+    }
+  } catch (error) {
+    const code = (error && error.code) || "";
+    if (code !== "cancelled") {
+      $("ocrStatus").textContent = ocrErrorMessage(code);
+      $("ocrStart").disabled = false;
+      if (recovered === 0) return;
+    }
+  }
+
+  $("ocrProgress").classList.add("hidden");
+  $("ocrStart").disabled = false;
+
+  if (recovered === 0) {
+    $("ocrCost").textContent =
+      "No hemos podido reconocer texto en esas páginas. Prueba con otras o con un escaneo de más calidad.";
+    return;
+  }
+
+  state.usedOcr = true;
+  // Las páginas que no se han reconocido se quedan fuera del material: no se
+  // inventa nada. El PDF original sigue teniendo todas sus páginas.
+  state.pages = state.pages.filter((p) => p.text.replace(/\s/g, "").length >= 25);
+  $("ocrPanel").classList.add("hidden");
+  $("workError").classList.add("hidden");
+  await finishProcessing();
+}
+
+function ocrErrorMessage(code) {
+  if (code === "not_granted" || code === "sampling_disabled") {
+    return "No has dado permiso para usar Claude en esta página.";
+  }
+  if (code === "rate_limited") {
+    return "Has llegado al límite de consultas por ahora. Inténtalo dentro de un rato.";
+  }
+  if (code === "session_expired") return "Tu sesión ha caducado: vuelve a entrar en Claude.";
+  if (code === "image_rejected") return "Esa página no se ha podido enviar como imagen.";
+  return "Ha fallado el reconocimiento. Puedes volver a intentarlo.";
 }
 
 /** Resumen, esquema y audio. Se rehace al cambiar el nivel de detalle. */
@@ -2104,6 +2298,28 @@ document.addEventListener("click", (event) => {
   }
 });
 
+/* Reconocimiento de texto */
+$("ocrStart").addEventListener("click", () => { void runOcr(); });
+$("ocrStop").addEventListener("click", () => {
+  if (ocrAbort) ocrAbort.abort();
+  $("ocrStatus").textContent = "Parado.";
+  $("ocrStart").disabled = false;
+});
+$("ocrExample").addEventListener("click", () => {
+  if (ocrAbort) ocrAbort.abort();
+  $("ocrPanel").classList.add("hidden");
+  $("workError").classList.add("hidden");
+  $("sampleBtn").click();
+});
+$("ocrOther").addEventListener("click", () => {
+  if (ocrAbort) ocrAbort.abort();
+  $("ocrPanel").classList.add("hidden");
+  $("workError").classList.add("hidden");
+  $("working").classList.add("hidden");
+  $("intake").classList.remove("hidden");
+  $("file").value = "";
+});
+
 /* Esquema */
 $("expandAll").addEventListener("click", () => toggleAllOutline(true));
 $("collapseAll").addEventListener("click", () => toggleAllOutline(false));
@@ -2156,6 +2372,8 @@ $("nextPage").addEventListener("click", () => renderPage(state.page + 1));
 
 /* Volver al principio */
 $("resetBtn").addEventListener("click", () => {
+  if (ocrAbort) ocrAbort.abort();
+  $("ocrPanel").classList.add("hidden");
   stopSpeech();
   player.playing = false; player.index = 0; player.segment = 0; player.virtual = 0;
   paintPlayer();
