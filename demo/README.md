@@ -9,12 +9,27 @@ audio **sin servidor, sin cuenta y sin que el PDF salga del dispositivo**.
 Incluye un temario de ejemplo de 56 páginas y necesita conexión la primera vez
 para cargar el lector de PDF desde un CDN.
 
+## Nada se queda parado en silencio
+
+Un vigilante comprueba que el proceso avance. Si una fase deja de dar señales
+(45 segundos en lo normal, 3 minutos mientras reconoce texto), la página lo
+dice, nombra la fase y ofrece reintentar, ver el ejemplo o cambiar de PDF. Los
+estados que no son progreso real («En espera», «No disponible», «Detenido») se
+muestran con esa palabra en lugar de un porcentaje quieto, que parece un cuelgue.
+
 ## Apuntes escaneados
 
 Si el PDF son fotos y no lleva texto, la página ofrece reconocerlo. Rasteriza
 cada página y se la pasa a Claude como imagen usando la capacidad `sample` del
 propio visor de Artifacts, es decir, **con la cuenta de quien mira la página**:
 pide permiso la primera vez.
+
+No todos los visores dejan hacerlo: si el puente con Claude no está o no admite
+imágenes, la página lo explica y propone abrirla desde claude.ai en el
+navegador o usar la aplicación instalada, en vez de dejar los botones apagados
+sin motivo. La detección reintenta unos segundos, porque el puente puede tardar
+en estar listo, y si los límites del visor no son concluyentes lo intenta igual
+antes de rendirse.
 
 Puede con un libro entero. Para que sea viable envía **ocho páginas por
 consulta**, mantiene **cuatro consultas en vuelo** y usa el modelo rápido, que

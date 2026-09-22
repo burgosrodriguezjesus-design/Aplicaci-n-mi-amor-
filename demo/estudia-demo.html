@@ -1582,6 +1582,77 @@ function setProgress(percent, label) {
   $("workBar").style.width = Math.max(0, Math.min(100, percent)) + "%";
   $("workPct").textContent = Math.round(percent) + " %";
   if (label) $("workMeta").textContent = label;
+  latido();
+}
+
+/** Estados que no son un porcentaje: un 0 % quieto parece una cuelgue. */
+function estadoProgreso(texto, meta) {
+  $("workPct").textContent = texto;
+  $("workBar").style.width = "0%";
+  if (meta) $("workMeta").textContent = meta;
+  latido();
+}
+
+/* ── Vigilante ───────────────────────────────────────────────
+   Si algo deja de avanzar, la página lo dice y ofrece salida.
+   Nunca se queda un porcentaje quieto sin explicación.        */
+
+let ultimoLatido = Date.now();
+let margenLatido = 45000;
+let vigilante = null;
+let vigilanteActivo = false;
+
+function latido(margen) {
+  ultimoLatido = Date.now();
+  if (margen) margenLatido = margen;
+}
+
+function arrancarVigilante(margen) {
+  margenLatido = margen || 45000;
+  ultimoLatido = Date.now();
+  vigilanteActivo = true;
+  if (vigilante) clearInterval(vigilante);
+  vigilante = setInterval(() => {
+    if (!vigilanteActivo) return;
+    if (Date.now() - ultimoLatido < margenLatido) return;
+    vigilanteActivo = false;
+    mostrarAtasco();
+  }, 4000);
+}
+
+function pararVigilante() {
+  vigilanteActivo = false;
+  if (vigilante) { clearInterval(vigilante); vigilante = null; }
+}
+
+function mostrarAtasco() {
+  const fase = document.querySelector('#phases li[data-state="run"]');
+  const donde = fase ? fase.textContent.trim().replace(/^\d+\s*/, "") : "el análisis";
+  const box = $("workError");
+  box.innerHTML =
+    "<strong>Esto se ha quedado parado.</strong> Llevaba un rato en «" + escapeHtml(donde) +
+    "» sin avanzar. No es normal y no vas a esperar en balde." +
+    '<div class="row" style="margin-top:12px">' +
+      '<button class="primary small" id="stuckRetry">Volver a intentarlo</button>' +
+      '<button class="secondary small" id="stuckExample">Ver el ejemplo</button>' +
+      '<button class="ghost small" id="stuckOther">Otro PDF</button>' +
+    "</div>";
+  box.classList.remove("hidden");
+  $("stuckRetry").addEventListener("click", () => {
+    box.classList.add("hidden");
+    if (state.lastFile) processPdf(state.lastFile.bytes, state.lastFile.name, state.lastFile.size);
+  });
+  $("stuckExample").addEventListener("click", () => {
+    box.classList.add("hidden");
+    $("sampleBtn").click();
+  });
+  $("stuckOther").addEventListener("click", () => {
+    box.classList.add("hidden");
+    $("ocrPanel").classList.add("hidden");
+    $("working").classList.add("hidden");
+    $("intake").classList.remove("hidden");
+    $("file").value = "";
+  });
 }
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 
@@ -1599,6 +1670,8 @@ async function processPdf(buffer, name, sizeBytes) {
 
   state.title = name.replace(/\.pdf$/i, "").replace(/[_-]+/g, " ").trim() || "Documento";
   state.sizeBytes = sizeBytes;
+  state.lastFile = { bytes: buffer, name, size: sizeBytes };
+  arrancarVigilante(45000);
   $("workName").textContent = name;
   setProgress(4, formatBytes(sizeBytes));
 
@@ -1639,10 +1712,11 @@ async function processPdf(buffer, name, sizeBytes) {
 
     await finishProcessing();
   } catch (error) {
+    pararVigilante();
     const box = $("workError");
     box.textContent = error && error.message ? error.message : "No hemos podido procesar el documento.";
     box.classList.remove("hidden");
-    setProgress(0);
+    estadoProgreso("Detenido", "No se ha podido continuar");
   }
 }
 
@@ -1660,6 +1734,7 @@ async function finishProcessing() {
 
   await rebuildStudyMaterial(true);
 
+  pararVigilante();
   $("working").classList.add("hidden");
   $("workError").classList.add("hidden");
   $("ocrPanel").classList.add("hidden");
@@ -1680,6 +1755,8 @@ async function finishProcessing() {
    lanzan dos consultas a la vez; el trabajo se puede parar y retomar
    sin perder lo ya reconocido.                                        */
 
+const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 let ocrAbort = null;
 let ocrSample = null;
 let ocrRunning = false;
@@ -1698,11 +1775,13 @@ function ocrTargets() {
 }
 
 async function offerOcr(scanned, partial) {
-  setProgress(0, "Listo para reconocer el texto");
+  estadoProgreso("En espera", "Listo para reconocer el texto");
   state.scannedPages = scanned;
 
   const panel = $("ocrPanel");
   panel.classList.remove("hidden");
+  // A partir de aquí esperamos a una persona, no a la máquina.
+  pararVigilante();
   $("ocrScanned").textContent = scanned.length +
     (scanned.length === 1 ? " página sin texto" : " páginas sin texto");
   $("ocrFrom").value = String(scanned[0]);
@@ -1716,27 +1795,71 @@ async function offerOcr(scanned, partial) {
       "Parte del documento son imágenes. Claude puede leerlas aquí mismo y añadirlas al resumen.";
   }
 
-  ocrSample = null;
-  try {
-    const sample = window.claude && (await window.claude.use("sample"));
-    if (sample) {
-      const limits = await sample.limits().catch(() => null);
-      if (limits && limits.images) {
-        ocrSample = sample;
-        ocrSample.__maxImages = Math.max(1, Math.min(8, limits.images.maxCount || 1));
-      }
-    }
-  } catch (error) {
-    ocrSample = null;
-  }
+  const puente = await detectarClaude();
+  ocrSample = puente.sample;
+  if (ocrSample) ocrSample.__maxImages = Math.max(1, Math.min(8, puente.maxImages || 2));
 
   if (!ocrSample) {
+    pararVigilante();
     $("ocrStart").disabled = true;
     $("ocrAll").disabled = true;
-    $("ocrCost").innerHTML =
-      "Aquí no se puede usar el reconocimiento de texto (tu cuenta o este visor no lo permiten). " +
-      "<strong>La aplicación completa sí lo hace</strong>, con el motor incluido y sin ninguna clave.";
+    estadoProgreso("No disponible", "Aquí no se puede reconocer el texto");
+    $("ocrIntro").innerHTML =
+      "<strong>Esta vista no puede pedirle nada a Claude</strong>, así que no hay forma de " +
+      "leer unas páginas que son imágenes. No es culpa del PDF." +
+      '<div style="margin-top:8px">Prueba a abrir esta misma página desde ' +
+      "<strong>claude.ai en el navegador</strong>: ahí sí suele poder. Y la aplicación " +
+      "instalada lo hace siempre, con su propio motor y sin gastar consultas.</div>";
+    $("ocrCost").textContent = "";
+    // Las salidas dejan de ser letra pequeña gris.
+    $("ocrExample").className = "primary small";
+    $("ocrOther").className = "secondary small";
+    return;
   }
+
+  if (puente.motivo !== "ok") {
+    $("ocrCost").innerHTML =
+      "Tu visor no confirma que admita imágenes. <strong>Lo intentamos igual</strong>: si no " +
+      "puede, te lo decimos en cuanto falle la primera consulta.";
+  }
+}
+
+/**
+ * ¿Puede esta página pedirle a Claude que mire imágenes?
+ * Se reintenta porque el puente del visor puede tardar en estar listo, y si
+ * los límites no lo dejan claro se intenta igualmente en lugar de rendirse.
+ */
+async function detectarClaude() {
+  if (!window.claude || typeof window.claude.use !== "function") {
+    return { sample: null, motivo: "sin_puente" };
+  }
+
+  let sample = null;
+  for (let intento = 0; intento < 3 && !sample; intento++) {
+    try {
+      sample = await window.claude.use("sample");
+    } catch (error) {
+      sample = null;
+    }
+    if (!sample && intento < 2) {
+      $("ocrCost").textContent = "Conectando con Claude…";
+      await esperar(2500);
+    }
+  }
+  if (!sample) return { sample: null, motivo: "sin_sample" };
+
+  let limits = null;
+  try {
+    limits = await sample.limits();
+  } catch (error) {
+    limits = null;
+  }
+
+  if (limits && limits.images) {
+    return { sample, motivo: "ok", maxImages: limits.images.maxCount || 1 };
+  }
+  // Sin confirmación: se intenta y que lo diga la llamada real.
+  return { sample, motivo: limits ? "sin_imagenes" : "dudoso", maxImages: 2 };
 }
 
 /** Rasteriza una página del PDF a JPEG para enviársela a Claude. */
@@ -1840,6 +1963,9 @@ function ocrErrorMessage(code) {
     return "Has llegado al límite de consultas de tu cuenta. Espera unos minutos y pulsa «Continuar»: no se pierde lo ya reconocido.";
   }
   if (code === "session_expired") return "Tu sesión ha caducado: vuelve a entrar en Claude.";
+  if (code === "images_unavailable") {
+    return "Este visor no deja enviar imágenes a Claude. Abre esta página desde claude.ai en el navegador, o usa la aplicación instalada.";
+  }
   if (code === "image_rejected") return "Alguna página no se ha podido enviar como imagen.";
   if (code === "prompt_too_large") return "Esa página trae demasiado texto de una vez.";
   return "Ha fallado el reconocimiento. Pulsa «Continuar» para seguir donde se quedó.";
@@ -1851,8 +1977,6 @@ function ocrErrorMessage(code) {
  * rápido, que no se para a pensar antes de escribir. Si la cuenta
  * topa con su límite, baja el ritmo y reintenta en vez de rendirse.
  */
-const esperar = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 async function procesarCola(lotes, tier, total, onAvance) {
   let pendientes = lotes.slice();
   let parado = null;
@@ -1906,6 +2030,7 @@ async function runOcr() {
 
   ocrRunning = true;
   ocrAbort = new AbortController();
+  arrancarVigilante(180000);
   $("ocrStart").disabled = true;
   $("ocrAll").disabled = true;
   $("ocrBuild").classList.add("hidden");
@@ -1961,6 +2086,7 @@ async function runOcr() {
   }
 
   ocrRunning = false;
+  pararVigilante();
   $("ocrProgress").classList.add("hidden");
   $("ocrStart").disabled = false;
   $("ocrAll").disabled = false;
