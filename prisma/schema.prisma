@@ -16,6 +16,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// Ajustes internos de la instalacion (clave -> valor).
+///
+/// Guarda cosas que tienen que sobrevivir a los reinicios pero no pertenecen a
+/// ningun usuario. Hoy, el secreto con el que se firman las sesiones: asi la
+/// aplicacion se puede publicar sin que nadie tenga que inventarse uno, y no
+/// se cierran las sesiones en cada despliegue.
+model Setting {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 /// Cuenta de usuario. El progreso se sincroniza entre dispositivos por usuario.
 model User {
   id               String   @id @default(cuid())

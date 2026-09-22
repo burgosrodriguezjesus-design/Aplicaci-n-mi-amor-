@@ -1,85 +1,60 @@
 # Convertir EstudIA en una aplicación
 
 El objetivo: **un icono en la pantalla de inicio de tu móvil** que abra EstudIA
-a pantalla completa, con tu cuenta, tu biblioteca y tu progreso, estés donde
-estés. Sin tienda de aplicaciones y sin esperar a que nadie la apruebe.
+a pantalla completa, con tu cuenta, tu biblioteca y tu progreso. Sin tienda de
+aplicaciones y sin esperar a que nadie la apruebe.
 
-Esta guía monta la versión **gratuita**. Son tres cuentas gratuitas (base de
-datos, ficheros y servidor) y unos veinte minutos, y se puede hacer **entero
-desde el móvil**, sin instalar nada.
-
-## Por qué hacen falta tres cosas y no una
-
-Ningún alojamiento gratuito —aquí ni en ningún otro sitio— da un disco que
-sobreviva a los reinicios: cuando el servidor se reinicia, todo lo que hubiera
-guardado dentro desaparece. Así que la aplicación no guarda nada en sí misma:
-
-| Qué | Dónde | Gratis |
-| --- | --- | --- |
-| La aplicación | Render | Sí, con el servicio durmiendo cuando no se usa |
-| La base de datos | Neon (PostgreSQL) | Sí, 0,5 GB |
-| Los PDF y el audio | Cloudflare R2 | Sí, 10 GB |
-
-Si prefieres pagar y tenerlo todo en un sitio, al final de esta guía está la
-versión de pago: un solo servicio con disco, unos 7 $/mes.
+La forma más corta es **todo dentro de Vercel**: una sola cuenta, sin tarjeta,
+sin copiar claves de ningún sitio y **sin configurar ni una variable**.
 
 ---
 
-## Paso 1 · La base de datos (Neon)
+## Todo en Vercel
 
-1. Entra en **[neon.tech](https://neon.tech)** y crea la cuenta (sirve GitHub).
-2. **Create project**. Nombre: `estudia`. Región: la más cercana, por ejemplo
-   *Europe (Frankfurt)*.
-3. Al terminar te enseña una **connection string** que empieza por
-   `postgresql://`. Cópiala entera y guárdala; la necesitas en el paso 3.
+### 1 · Crear el proyecto
 
-No hay que crear ninguna tabla: la aplicación las crea sola al arrancar.
+1. Entra en **[vercel.com](https://vercel.com)** y crea la cuenta con GitHub.
+2. **Add New → Project** y elige el repositorio `Aplicaci-n-mi-amor-`.
+3. En **Root Directory** déjalo como está. **No despliegues todavía**: primero
+   crea el almacén y la base de datos (paso 2). Si ya le has dado a *Deploy* y
+   ha fallado, no pasa nada: sigue con el paso 2 y luego **Redeploy**.
 
-## Paso 2 · Los ficheros (Cloudflare R2)
+### 2 · La base de datos y los ficheros, desde el mismo panel
 
-1. Entra en **[dash.cloudflare.com](https://dash.cloudflare.com)** y crea la
-   cuenta. En el menú lateral: **R2**.
-2. La primera vez pide añadir una tarjeta para activar R2. **No se cobra nada**
-   dentro de los 10 GB gratuitos; es una verificación.
-3. **Create bucket**. Nombre: `estudia`. Ubicación: automática.
-4. Vuelve a **R2 → Manage R2 API Tokens → Create API Token**.
-   Permisos: **Object Read & Write**, limitado al bucket `estudia`.
-5. Te enseña **una sola vez** tres datos. Cópialos ya:
-   - **Access Key ID**
-   - **Secret Access Key**
-   - el **endpoint**, con la forma
-     `https://<id-de-cuenta>.r2.cloudflarestorage.com`
+Dentro del proyecto, pestaña **Storage**:
 
-## Paso 3 · La aplicación (Render)
+1. **Create Database → Postgres**. Nombre: el que quieras. Región: la más
+   cercana. Al crearla, Vercel la conecta sola al proyecto.
+2. **Create → Blob**. Es donde van los PDF y el audio. También se conecta sola.
 
-1. Entra en **[render.com](https://render.com)** y crea la cuenta con GitHub,
-   autorizando el repositorio `Aplicaci-n-mi-amor-`.
-2. **New → Blueprint** y elige el repositorio y la rama donde esté el código
-   (`claude/pdf-study-app-tjq3ok`, o `main` si ya la has fusionado).
-3. Render lee [`render.yaml`](../render.yaml) y te pide los cinco datos de
-   antes:
+Eso es todo. **No tienes que copiar ninguna clave ni añadir ninguna variable**:
+Vercel las pone en el proyecto y la aplicación las reconoce por su nombre. Los
+ficheros se guardan como privados, así que no existe ninguna dirección pública
+desde la que descargar tus apuntes.
 
-   | Campo | Qué pegar |
-   | --- | --- |
-   | `DATABASE_URL` | La cadena de Neon (paso 1) |
-   | `STORAGE_S3_ENDPOINT` | El endpoint de R2 (paso 2) |
-   | `STORAGE_S3_BUCKET` | `estudia` |
-   | `STORAGE_S3_ACCESS_KEY_ID` | El Access Key ID de R2 |
-   | `STORAGE_S3_SECRET_ACCESS_KEY` | El Secret Access Key de R2 |
+### 3 · Desplegar
 
-4. **Apply**. La primera construcción tarda unos diez minutos porque compila la
-   aplicación entera.
-5. Cuando ponga **Live**, arriba tienes la dirección
-   `https://estudia-algo.onrender.com`. Ábrela y **crea tu cuenta** desde la
-   propia aplicación. Nadie más puede ver tus documentos.
+Vuelve a **Deployments → Redeploy** (o haz *Deploy* si aún no lo habías hecho).
+La primera construcción tarda unos minutos: además de compilar, crea las tablas
+de la base de datos.
 
-A partir de ahí, cada vez que se suba código al repositorio Render vuelve a
-desplegar solo.
+Cuando termine, abre la dirección `https://tu-proyecto.vercel.app`.
 
-## Paso 4 · Instalarla en el móvil
+**Para comprobar que está bien montada**, abre
+`https://tu-proyecto.vercel.app/api/health`. Debe responder algo así:
 
-Abre la dirección en el móvil y entra con tu cuenta. Aparecerá un aviso abajo
-ofreciéndote instalarla. Si lo cierras:
+```json
+{"ok":true,"database":{"ok":true},"storage":{"ok":true,"driver":"blob"}}
+```
+
+Si alguna de las dos dice `"ok":false`, el mensaje que la acompaña dice
+exactamente qué falta. Casi siempre es que falta crear el almacén Blob o la
+base de datos en **Storage**.
+
+### 4 · Crear tu cuenta e instalarla
+
+Entra en la aplicación y **regístrate**. La cuenta es tuya y nadie más ve tus
+documentos. Aparecerá abajo un aviso para instalarla; si lo cierras:
 
 **iPhone y iPad (Safari).** Toca **Compartir** (el cuadrado con la flecha) →
 **Añadir a pantalla de inicio** → **Añadir**. Tiene que ser Safari: desde Chrome
@@ -90,30 +65,31 @@ en iOS no se puede.
 **Ordenador (Chrome o Edge).** El icono de instalar, a la derecha de la barra de
 direcciones.
 
-Queda como cualquier otra aplicación: icono propio, pantalla completa, sin barra
-del navegador, y arranca al instante porque la interfaz se guarda en el
-dispositivo.
-
 ---
 
-## Lo que hay que saber del plan gratuito
+## Lo que tienes que saber
 
-**Se duerme.** Si nadie la usa durante quince minutos, Render apaga el servicio.
-La siguiente vez que la abras tardará **cerca de un minuto** en arrancar. A
-partir de ahí va normal.
+**No se duerme.** Abre siempre al instante.
 
-**Un libro escaneado puede necesitar varias vueltas.** Si se duerme mientras
-está reconociendo texto, el trabajo se corta. No pasa nada: **lo reconocido se
-guarda página a página**, y al volver a procesar el documento sigue por donde
-iba en lugar de empezar de cero. En el plan gratuito se reconocen 150 páginas
-por pasada (`OCR_MAX_PAGES`), así que un libro de 400 son tres vueltas.
+**Los libros escaneados van por tandas.** En Vercel cada petición se corta a los
+60 segundos, así que el procesado avanza a trozos que se encadenan solos. Con
+números medidos: un temario de 402 páginas **con texto** se hace en 7,7
+segundos, de una vez; un escaneado avanza a 0,4 s por página, así que 400
+páginas escaneadas son unas cuatro tandas.
 
-**Es una máquina pequeña.** 512 MB de memoria, así que reconoce una página a la
-vez y a menos resolución. Lee igual de bien; tarda más.
+**Deja la pestaña abierta** mientras procesa un libro escaneado largo. Si la
+cierras, el trabajo se para donde estuviera; al volver a abrir el documento
+**sigue por donde iba**, sin repetir nada de lo reconocido.
 
-**Para que no se duerma mientras trabajas**, deja la pestaña abierta: la
-aplicación consulta el estado del documento cada pocos segundos y eso la
-mantiene despierta.
+**Los límites del plan gratuito** de Vercel (tiempo de ejecución y espacio de
+almacenamiento) son de sobra para tus apuntes, pero existen: si algún día subes
+muchos libros, el propio panel te avisa.
+
+**Una advertencia honesta.** El reconocimiento de texto usa un binario nativo
+para rasterizar páginas y 44 MB de motor WebAssembly, y **eso no lo he podido
+probar en el entorno real de Vercel**. Los PDF con texto no dependen de nada de
+eso y funcionan seguro. Si un escaneado falla allí, el registro de Vercel lo
+dirá y se arregla.
 
 ### Resúmenes reescritos con IA (opcional)
 
@@ -121,9 +97,8 @@ Sin clave, la aplicación usa el motor extractivo: frases literales del PDF, sin
 inventar nada. Si quieres que los resúmenes se **reescriban y expliquen**:
 
 1. Saca una clave en [console.anthropic.com](https://console.anthropic.com).
-2. En Render: tu servicio → **Environment** → **Add Environment Variable** →
-   `ANTHROPIC_API_KEY`.
-3. Guarda. Render reinicia solo.
+2. En Vercel: **Settings → Environment Variables** → `ANTHROPIC_API_KEY`.
+3. **Redeploy**.
 
 La clave vive únicamente en el servidor: **nunca llega al navegador**. Se cobra
 por uso a tu cuenta de Anthropic.
@@ -138,14 +113,22 @@ por uso a tu cuenta de Anthropic.
 docker compose up
 ```
 
-Y abre `http://localhost:3000`. Usa SQLite y el disco del ordenador, así que no
-hace falta ni Neon ni R2. Solo accesible desde casa.
+Y abre `http://localhost:3000`. Usa SQLite y el disco del ordenador: no hace
+falta nada más. Solo accesible desde casa.
 
-### La versión de pago (no se duerme, todo en un sitio)
+### En Render
 
-El plan `starter` de Render (unos 7 $/mes) permite montar un **disco**, y con
-disco no hacen falta ni Neon ni R2: la base de datos y los PDF viven ahí. En
-`render.yaml`, cambia el plan y sustituye las variables de almacenamiento:
+Render no corta las peticiones, así que un libro escaneado entero se hace de
+una tirada sin tandas. A cambio, en su plan gratuito **el servicio se duerme** y
+tarda cerca de un minuto en despertar, y necesita igualmente una base de datos
+y un almacenamiento externos (Neon y Cloudflare R2, los dos con plan gratuito;
+R2 pide tarjeta para activarse aunque no cobre).
+
+El repositorio trae [`render.yaml`](../render.yaml) listo: **New → Blueprint**,
+eliges el repositorio, y te pide esos datos.
+
+Con el plan de pago (`starter`, unos 7 $/mes) puedes montar un **disco**, y
+entonces no hacen falta ni Neon ni R2: la base de datos y los PDF viven ahí.
 
 ```yaml
 plan: starter
@@ -162,9 +145,6 @@ envVars:
     value: /data/storage
 ```
 
-Con `standard` (2 GB de memoria, unos 25 $/mes) puedes subir `OCR_CONCURRENCY` a
-3 y `OCR_SCALE` a 1.6, y los libros escaneados van bastante más rápido.
-
 ### En otro alojamiento
 
 Sirve cualquier sitio que ejecute contenedores. Lo imprescindible:
@@ -173,40 +153,12 @@ Sirve cualquier sitio que ejecute contenedores. Lo imprescindible:
 | --- | --- |
 | Procesos largos, o tandas | Un libro entero tarda minutos; si el sitio corta las peticiones, pon `JOB_SLICE_SECONDS` |
 | Al menos 512 MB de memoria | El reconocimiento rasteriza páginas |
-| Disco persistente **o** PostgreSQL + S3 | Los apuntes tienen que sobrevivir al reinicio |
-| `AUTH_SECRET` fijo | Si cambia, se cierran todas las sesiones |
+| Disco persistente **o** PostgreSQL + almacenamiento | Los apuntes tienen que sobrevivir al reinicio |
 
-### En Vercel
-
-Sí funciona, pero conviene saber en qué se parece y en qué no.
-
-**No te ahorra pasos**: Vercel tampoco tiene disco, así que necesitas igualmente
-Neon y Cloudflare R2. Los pasos 1 y 2 de esta guía son los mismos.
-
-**A cambio, no se duerme.** Abre siempre al instante, y no te pide tarjeta.
-
-**Lo que cambia por dentro.** En Vercel cada petición se corta a los 60 segundos
-y entre petición y petición no se ejecuta nada. Por eso el procesado va **por
-tandas**: cada una avanza lo que le da tiempo, guarda lo hecho y la aplicación
-pide la siguiente. Medido aquí: un temario de 402 páginas con texto se hace en
-7,7 segundos —una sola tanda—, y un escaneado avanza a 0,4 s por página, así que
-un libro de 400 páginas escaneadas son unas cuatro tandas.
-
-La consecuencia práctica: **deja la pestaña abierta** mientras procesa un libro
-escaneado largo. Si la cierras, el trabajo se para donde estuviera; al volver a
-abrir el documento sigue por donde iba, sin repetir nada.
-
-Para desplegar: en [vercel.com](https://vercel.com) → **Add New → Project** →
-eliges el repositorio, y en **Environment Variables** pegas los mismos cinco
-datos de la tabla del paso 3, más `AUTH_SECRET` (cualquier texto largo y
-aleatorio; en Render se generaba solo). `JOB_SLICE_SECONDS` y `JOB_BACKGROUND` se
-ajustan solos: la aplicación detecta que está en Vercel.
-
-Una advertencia honesta: el reconocimiento de texto usa un binario nativo para
-rasterizar páginas y 44 MB de motor WebAssembly, y **eso no lo he podido probar
-en el entorno real de Vercel** desde aquí. Los PDF con texto no dependen de nada
-de eso. Si un escaneado falla ahí, el registro de Vercel lo dirá y se arregla;
-mientras tanto, Render sí está probado de arriba abajo.
+La aplicación se adapta sola: mira qué hay configurado y elige base de datos
+(SQLite o PostgreSQL) y almacenamiento (disco, Vercel Blob o cualquier servicio
+compatible con S3). Si no le das un `AUTH_SECRET`, se genera uno y lo guarda en
+la base de datos, para que las sesiones no se cierren en cada despliegue.
 
 ### Aplicación nativa de la App Store
 

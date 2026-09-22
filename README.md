@@ -70,12 +70,14 @@ gratuito da disco que sobreviva a un reinicio**: Render ejecuta la aplicación,
 Neon guarda la base de datos y Cloudflare R2 los PDF. La aplicación no guarda
 nada en sí misma, así que da igual cuántas veces se reinicie.
 
-También funciona en **Vercel**, que no se duerme y no pide tarjeta: allí cada
-petición se corta a los 60 segundos, así que el procesado va por tandas que se
-encadenan solas. Vercel tampoco tiene disco, así que necesita igualmente Neon y
-R2: no te ahorra pasos, solo la espera al abrir.
+La forma más corta es **todo dentro de Vercel**: una sola cuenta, sin tarjeta y
+**sin configurar ni una variable**. Creas la base de datos y el almacén de
+ficheros desde el propio panel del proyecto (pestaña *Storage*) y la aplicación
+los reconoce sola; hasta el secreto de las sesiones se genera y se guarda si no
+se lo das. Allí el procesado va por tandas, porque cada petición se corta a los
+60 segundos.
 
-El paso a paso de las dos opciones, con dónde sacar cada dato, está en
+El paso a paso, y las otras opciones (Render, tu propio ordenador), están en
 **[`docs/publicar.md`](docs/publicar.md)**.
 
 ### Opción C · solo mirar, sin instalar nada

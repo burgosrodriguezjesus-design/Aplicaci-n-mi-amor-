@@ -5,7 +5,7 @@
   "description": "Plataforma de estudio que convierte PDFs academicos en resumenes, esquemas y audiolibros.",
   "scripts": {
     "dev": "next dev",
-    "build": "npm run db:schema && prisma generate --schema=prisma/schema.runtime.prisma && next build",
+    "build": "node scripts/db-setup.mjs && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "db:push": "npm run db:schema && prisma db push --schema=prisma/schema.runtime.prisma",
@@ -22,11 +22,13 @@
     "db:schema": "node scripts/prisma-schema.mjs",
     "test:almacenamiento": "tsx tests/unit/almacenamiento.mts",
     "test:reanudar": "tsx tests/unit/reanudar-ocr.mts",
-    "test:rebanadas": "node tests/unit/rebanadas.mjs"
+    "test:rebanadas": "node tests/unit/rebanadas.mjs",
+    "test:blob": "tsx tests/unit/blob.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
     "@prisma/client": "^6.19.3",
+    "@vercel/blob": "^2.8.0",
     "bcryptjs": "^3.0.3",
     "jose": "^6.2.12",
     "next": "^16.3.5",

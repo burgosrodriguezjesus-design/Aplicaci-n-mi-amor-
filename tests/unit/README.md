@@ -6,6 +6,7 @@ la aplicación entera.
 ```bash
 npm run test:estructura      # el motor entiende el índice de un temario
 npm run test:almacenamiento  # el guardado compatible con S3
+npm run test:blob            # el guardado en Vercel Blob
 ```
 
 | Prueba | Qué asegura |
@@ -14,6 +15,8 @@ npm run test:almacenamiento  # el guardado compatible con S3
 | `almacenamiento.mts` | El driver S3 firma bien. El servidor de prueba **verifica la firma con una librería independiente** (`aws4`) y contesta 403 si no cuadra, igual que haría Cloudflare R2: si la ida y vuelta funciona, la firma es correcta. |
 | `reanudar-ocr.mts` | Un reconocimiento cortado a mitad se reanuda donde iba en vez de empezar de cero. Es lo que hace viable un libro escaneado en un alojamiento gratuito, que se duerme solo. |
 | `rebanadas.mjs` | El procesado se puede partir en tandas cortas y el material final es el mismo. Es lo que permite publicarla donde cada petición se corta a los 60 segundos. |
+| `blob.mts` | El almacenamiento de Vercel se usa como toca: rutas privadas, sin sufijos aleatorios, y borrar algo que ya no está no es un error. El servicio real no se puede levantar en local, así que el cliente se sustituye por uno que apunta con qué argumentos se le llama. |
+| `sesiones.mjs` | Sin `AUTH_SECRET`, la aplicación se genera uno y lo guarda: la sesión sobrevive a un reinicio en vez de echar a todo el mundo en cada despliegue. |
 
 ## La prueba de reanudación
 
@@ -52,3 +55,14 @@ final hay resumen, esquema, audio y el texto reconocido intacto.
 Esa misma configuración sirve para pasar la prueba de humo completa
 (`npm run test:smoke`) sobre PostgreSQL y S3, que es exactamente lo que corre en
 el alojamiento gratuito.
+
+## La prueba de sesiones
+
+Necesita reiniciar el servidor a mitad, así que va en dos fases:
+
+```bash
+npm start &                                   # sin AUTH_SECRET
+SESION_FASE=abrir node tests/unit/sesiones.mjs
+# reinicia el servidor
+SESION_FASE=comprobar node tests/unit/sesiones.mjs
+```

@@ -76,20 +76,31 @@ const localDriver: StorageDriver = {
  * para que quien use la aplicacion en su ordenador no cargue con nada.
  */
 function elegirDriver(): StorageDriver {
-  if (env.storage.driver !== "s3") return localDriver;
-
-  // Import perezoso: `require` aqui es deliberado, el resto del fichero es
-  // sincrono y el driver debe estar listo antes del primer uso.
-  const { s3Driver, s3Configurado } =
-    require("./s3") as typeof import("./s3");
-
-  const problema = s3Configurado();
-  if (problema) {
-    throw new Error(
-      `STORAGE_DRIVER="s3" pero el almacenamiento no esta completo. ${problema}`,
-    );
+  // Import perezoso en los dos casos: `require` aqui es deliberado, el resto
+  // del fichero es sincrono y el driver debe estar listo antes del primer uso.
+  if (env.storage.driver === "blob") {
+    const { blobDriver, blobConfigurado } = require("./blob") as typeof import("./blob");
+    const problema = blobConfigurado();
+    if (problema) {
+      throw new Error(
+        `El almacenamiento esta puesto en "blob" pero no esta completo. ${problema}`,
+      );
+    }
+    return blobDriver;
   }
-  return s3Driver;
+
+  if (env.storage.driver === "s3") {
+    const { s3Driver, s3Configurado } = require("./s3") as typeof import("./s3");
+    const problema = s3Configurado();
+    if (problema) {
+      throw new Error(
+        `El almacenamiento esta puesto en "s3" pero no esta completo. ${problema}`,
+      );
+    }
+    return s3Driver;
+  }
+
+  return localDriver;
 }
 
 export const storage: StorageDriver = elegirDriver();

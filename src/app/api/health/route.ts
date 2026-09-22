@@ -1,20 +1,68 @@
 /**
- * Comprobación de salud para el alojamiento.
+ * Comprobación de salud.
  *
- * Render (y cualquier otro servicio) llama aquí para saber si la aplicación
- * está viva y si debe reiniciarla. Responde rápido y sin tocar nada privado:
- * solo confirma que el proceso responde y que la base de datos contesta.
+ * La usa el alojamiento para saber si la aplicación está viva, y tú para saber
+ * si está bien montada: comprueba de verdad que la base de datos responde y
+ * que el almacenamiento guarda, lee y borra. Si algo falta, lo dice con
+ * nombre y apellidos en vez de esperar a que falle al subir el primer PDF.
+ *
+ * No devuelve nada privado: ni rutas, ni credenciales, ni datos de nadie.
  */
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { env } from "@/lib/env";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+async function comprobarBaseDeDatos() {
   try {
     await prisma.$queryRaw`SELECT 1`;
-    return NextResponse.json({ ok: true, database: "ok" });
-  } catch {
-    return NextResponse.json({ ok: false, database: "error" }, { status: 503 });
+    return { ok: true as const };
+  } catch (error) {
+    return { ok: false as const, error: mensaje(error) };
   }
+}
+
+async function comprobarAlmacenamiento() {
+  // Un fichero minúsculo con nombre único: se guarda, se lee y se borra.
+  const clave = `health/${randomUUID()}.txt`;
+  const contenido = Buffer.from("estudia-ok");
+  try {
+    const { storage } = await import("@/lib/storage");
+    await storage.put(clave, contenido, "text/plain");
+    const leido = await storage.get(clave);
+    await storage.delete(clave);
+    if (!leido.equals(contenido)) {
+      return { ok: false as const, error: "lo leído no coincide con lo guardado" };
+    }
+    return { ok: true as const };
+  } catch (error) {
+    await import("@/lib/storage")
+      .then(({ storage }) => storage.delete(clave))
+      .catch(() => undefined);
+    return { ok: false as const, error: mensaje(error) };
+  }
+}
+
+function mensaje(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export async function GET() {
+  const [database, storage] = await Promise.all([
+    comprobarBaseDeDatos(),
+    comprobarAlmacenamiento(),
+  ]);
+
+  const ok = database.ok && storage.ok;
+  return NextResponse.json(
+    {
+      ok,
+      database,
+      storage: { ...storage, driver: env.storage.driver },
+    },
+    { status: ok ? 200 : 503 },
+  );
 }

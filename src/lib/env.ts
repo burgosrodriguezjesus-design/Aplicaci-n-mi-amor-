@@ -24,15 +24,49 @@ function bool(name: string, fallback: boolean): boolean {
 
 const authSecret = str("AUTH_SECRET");
 
-if (!authSecret && process.env.NODE_ENV === "production") {
-  throw new Error(
-    "Falta AUTH_SECRET. Genera uno con `openssl rand -base64 48` y anadelo al entorno.",
+/**
+ * Direccion de la base de datos.
+ *
+ * Vercel, cuando creas la base de datos desde su panel, inyecta la variable
+ * con otros nombres. Se aceptan todos para que no haya que copiar nada a mano.
+ */
+function databaseUrl() {
+  return (
+    str("DATABASE_URL") ||
+    str("POSTGRES_PRISMA_URL") ||
+    str("POSTGRES_URL_NON_POOLING") ||
+    str("POSTGRES_URL") ||
+    "file:./dev.db"
   );
 }
 
+/**
+ * Donde se guardan los PDF y el audio.
+ *
+ * Se decide solo, por lo que haya configurado, para que publicarla no exija
+ * tocar variables: si Vercel ha puesto su almacenamiento, se usa ese; si hay
+ * credenciales de S3, esas; y si no, el disco.
+ */
+function storageDriver() {
+  const elegido = str("STORAGE_DRIVER");
+  if (elegido) return elegido;
+  if (str("BLOB_READ_WRITE_TOKEN")) return "blob";
+  if (str("STORAGE_S3_ENDPOINT") && str("STORAGE_S3_BUCKET")) return "s3";
+  return "local";
+}
+
+// Prisma lee DATABASE_URL del entorno tal cual: se normaliza antes de que lo
+// haga, para aceptar tambien los nombres que inyecta Vercel.
+process.env.DATABASE_URL = databaseUrl();
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
-  authSecret: authSecret || "estudia-desarrollo-secreto-no-usar-en-produccion",
+  /**
+   * Vacio significa "generalo tu": se crea uno y se guarda en la base de
+   * datos. Asi la aplicacion se puede publicar sin configurar nada, y el
+   * secreto sigue siendo estable entre despliegues.
+   */
+  authSecret,
 
   ai: {
     apiKey: str("ANTHROPIC_API_KEY"),
@@ -66,7 +100,7 @@ export const env = {
     // "local" guarda en disco; "s3" en cualquier servicio compatible con S3
     // (Cloudflare R2, Supabase, Backblaze B2...), que es lo que hace falta
     // cuando el alojamiento no tiene disco persistente.
-    driver: str("STORAGE_DRIVER", "local"),
+    driver: storageDriver(),
     dir: str("STORAGE_DIR", "./storage"),
     s3: {
       endpoint: str("STORAGE_S3_ENDPOINT"),

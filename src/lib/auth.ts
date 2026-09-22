@@ -6,6 +6,7 @@
  *   por lo que no es accesible desde JavaScript del cliente.
  */
 import "server-only";
+import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
@@ -14,7 +15,41 @@ import { prisma } from "./db";
 
 const COOKIE = "estudia_session";
 const MAX_AGE = 60 * 60 * 24 * 30; // 30 dias
-const key = new TextEncoder().encode(env.authSecret);
+
+/**
+ * Clave con la que se firman las sesiones.
+ *
+ * Si no viene por entorno se genera una y se guarda en la base de datos. Es lo
+ * que permite publicar la aplicacion sin configurar nada: tiene que ser
+ * estable -si cambiara, se cerrarian todas las sesiones- y no puede vivir en
+ * el disco, porque en un alojamiento sin servidor no hay disco que dure.
+ */
+let claveEnMemoria: Uint8Array | null = null;
+
+async function claveDeFirma(): Promise<Uint8Array> {
+  if (claveEnMemoria) return claveEnMemoria;
+
+  if (env.authSecret) {
+    claveEnMemoria = new TextEncoder().encode(env.authSecret);
+    return claveEnMemoria;
+  }
+
+  const guardada = await prisma.setting.findUnique({ where: { key: "auth-secret" } });
+  if (guardada) {
+    claveEnMemoria = new TextEncoder().encode(guardada.value);
+    return claveEnMemoria;
+  }
+
+  const nueva = randomBytes(48).toString("base64");
+  // `create` puede chocar si dos peticiones llegan a la vez: gana la primera
+  // y la segunda se queda con la que ya hay.
+  const fijada = await prisma.setting
+    .create({ data: { key: "auth-secret", value: nueva } })
+    .catch(() => prisma.setting.findUnique({ where: { key: "auth-secret" } }));
+
+  claveEnMemoria = new TextEncoder().encode(fijada?.value ?? nueva);
+  return claveEnMemoria;
+}
 
 export type SessionUser = {
   id: string;
@@ -40,7 +75,7 @@ export async function createSession(userId: string) {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${MAX_AGE}s`)
-    .sign(key);
+    .sign(await claveDeFirma());
 
   const store = await cookies();
   store.set(COOKIE, token, {
@@ -64,7 +99,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   if (!token) return null;
 
   try {
-    const { payload } = await jwtVerify(token, key);
+    const { payload } = await jwtVerify(token, await claveDeFirma());
     const userId = typeof payload.sub === "string" ? payload.sub : null;
     if (!userId) return null;
 
