@@ -14,17 +14,22 @@ para cargar el lector de PDF desde un CDN.
 Si el PDF son fotos y no lleva texto, la página ofrece reconocerlo. Rasteriza
 cada página y se la pasa a Claude como imagen usando la capacidad `sample` del
 propio visor de Artifacts, es decir, **con la cuenta de quien mira la página**:
-pide permiso la primera vez y se procesan solo las páginas del rango elegido.
-Por eso el rango viene acotado por defecto: un libro entero son cientos de
-consultas.
+pide permiso la primera vez.
 
-Para reconocer un libro completo de una tirada está la aplicación instalada,
-que lo hace en el servidor con un motor local y sin coste por página.
+Puede con un libro entero. Para que sea viable envía **cuatro páginas por
+consulta** y mantiene **dos consultas en vuelo**, así que un libro de 400
+páginas son unas cien consultas en lugar de cuatrocientas. Muestra cuántas
+lleva y el tiempo que queda, se puede parar en cualquier momento y continuar
+después sin perder lo reconocido, y si se agota el límite de la cuenta lo dice
+y espera.
+
+La aplicación instalada sigue siendo más rápida y sin coste por página: lo hace
+en el servidor con un motor local.
 
 Qué **no** hace, por vivir en el navegador:
 
 - no reescribe el resumen con IA (es extractivo: frases literales del PDF),
-- no reconoce cientos de páginas de una vez (va por rangos),
+- el reconocimiento gasta consultas de la cuenta de quien la abre,
 - no guarda biblioteca, progreso ni cuentas,
 - usa la voz del dispositivo, que no suena con la pantalla bloqueada.
 

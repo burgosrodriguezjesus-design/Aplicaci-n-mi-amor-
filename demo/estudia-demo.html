@@ -347,6 +347,14 @@
   /* ── PDF ────────────────────────────────────────────────── */
   #pdfCanvas { width: 100%; height: auto; display: block; border-radius: 10px; background: #fff; }
 
+  @keyframes shimmer { to { background-position-x: -200%; } }
+  .skeleton {
+    border-radius: 6px;
+    background: linear-gradient(90deg, var(--sunken) 25%, var(--surface) 37%, var(--sunken) 63%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s linear infinite;
+  }
+
   .notice {
     border-radius: 12px; padding: 11px 13px; font-size: 13.5px; line-height: 1.55;
     background: var(--warn-soft); color: var(--ink-soft);
@@ -486,8 +494,14 @@
         <button class="primary" id="ocrStart" style="flex:0 0 auto">Leer estas páginas</button>
       </div>
 
+      <div class="row" style="margin-top:10px">
+        <button class="secondary small" id="ocrAll">Todo el documento</button>
+        <span class="tiny muted">Va por lotes y puedes pararlo cuando quieras</span>
+      </div>
+
       <p class="tiny muted" style="margin:10px 0 0" id="ocrCost">
-        Cada página es una consulta a Claude con tu propia cuenta. Empieza por unas pocas.
+        Lo lee Claude con tu propia cuenta, varias páginas por consulta. Un libro entero
+        puede llevar un buen rato: déjalo en marcha y no cierres esta pantalla.
       </p>
 
       <div id="ocrProgress" class="hidden" style="margin-top:14px">
@@ -501,7 +515,8 @@
       </div>
 
       <div class="row" style="margin-top:12px">
-        <button class="secondary small" id="ocrExample">Ver el ejemplo en su lugar</button>
+        <button class="secondary small hidden" id="ocrBuild">Seguir con lo ya reconocido</button>
+        <button class="ghost small" id="ocrExample">Ver el ejemplo en su lugar</button>
         <button class="ghost small" id="ocrOther">Probar con otro PDF</button>
       </div>
     </div>
@@ -1657,16 +1672,30 @@ async function finishProcessing() {
 
 /* ── Reconocimiento de texto (OCR) con Claude ────────────────
    Las páginas escaneadas se rasterizan aquí y se le piden a Claude
-   como imágenes. Corre con la cuenta de quien mira la página, así
-   que se pide permiso y se procesan solo las páginas elegidas.     */
+   como imágenes, con la cuenta de quien mira la página. Para que un
+   libro entero sea viable se envían varias páginas por consulta y se
+   lanzan dos consultas a la vez; el trabajo se puede parar y retomar
+   sin perder lo ya reconocido.                                        */
 
 let ocrAbort = null;
 let ocrSample = null;
+let ocrRunning = false;
 state.scannedPages = [];
 state.usedOcr = false;
+state.ocrDone = 0;
+
+/** Páginas del rango elegido que siguen sin texto. */
+function ocrTargets() {
+  const from = Math.max(1, Number($("ocrFrom").value) || 1);
+  const to = Math.min(state.pageCount, Number($("ocrTo").value) || from);
+  return state.pages
+    .filter((p) => p.pageNumber >= from && p.pageNumber <= to)
+    .filter((p) => p.text.replace(/\s/g, "").length < 25)
+    .map((p) => p.pageNumber);
+}
 
 async function offerOcr(scanned, partial) {
-  setProgress(52);
+  setProgress(0, "Listo para reconocer el texto");
   state.scannedPages = scanned;
 
   const panel = $("ocrPanel");
@@ -1677,19 +1706,22 @@ async function offerOcr(scanned, partial) {
   $("ocrFrom").max = String(state.pageCount);
   $("ocrTo").value = String(scanned[Math.min(9, scanned.length - 1)]);
   $("ocrTo").max = String(state.pageCount);
+  $("ocrAll").textContent = "Todo el documento (" + scanned.length + " págs.)";
 
   if (partial) {
     $("ocrIntro").textContent =
       "Parte del documento son imágenes. Claude puede leerlas aquí mismo y añadirlas al resumen.";
   }
 
-  // ¿Puede esta página pedirle a Claude que mire imágenes?
   ocrSample = null;
   try {
     const sample = window.claude && (await window.claude.use("sample"));
     if (sample) {
       const limits = await sample.limits().catch(() => null);
-      if (limits && limits.images) ocrSample = sample;
+      if (limits && limits.images) {
+        ocrSample = sample;
+        ocrSample.__maxImages = Math.max(1, Math.min(4, limits.images.maxCount || 1));
+      }
     }
   } catch (error) {
     ocrSample = null;
@@ -1697,6 +1729,7 @@ async function offerOcr(scanned, partial) {
 
   if (!ocrSample) {
     $("ocrStart").disabled = true;
+    $("ocrAll").disabled = true;
     $("ocrCost").innerHTML =
       "Aquí no se puede usar el reconocimiento de texto (tu cuenta o este visor no lo permiten). " +
       "<strong>La aplicación completa sí lo hace</strong>, con el motor incluido y sin ninguna clave.";
@@ -1707,7 +1740,7 @@ async function offerOcr(scanned, partial) {
 async function pageToBlob(pageNumber, maxWidth) {
   const page = await state.pdfDoc.getPage(pageNumber);
   const base = page.getViewport({ scale: 1 });
-  const scale = Math.min(2.5, (maxWidth || 1500) / base.width);
+  const scale = Math.min(2.5, (maxWidth || 1400) / base.width);
   const viewport = page.getViewport({ scale });
 
   const canvas = document.createElement("canvas");
@@ -1719,91 +1752,79 @@ async function pageToBlob(pageNumber, maxWidth) {
   await page.render({ canvasContext: ctx, viewport }).promise;
   page.cleanup();
 
-  return await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.78));
+  canvas.width = 0;
+  canvas.height = 0;
+  return blob;
 }
 
-const OCR_PROMPT =
-  "Eres un sistema de OCR. La imagen es una página escaneada de unos apuntes. " +
+const OCR_RULES =
+  "Eres un sistema de OCR. Las imágenes son páginas escaneadas de unos apuntes. " +
   "Transcribe literalmente todo su texto, respetando títulos, numeración, listas, " +
   "fórmulas y tablas. No resumas, no interpretes y no añadas nada que no esté escrito. " +
-  "Si una zona es ilegible escribe [ilegible]. Si la página no tiene texto responde " +
-  "exactamente: [sin texto]. Responde solo con la transcripción.";
+  "Si una zona es ilegible escribe [ilegible].";
 
-async function runOcr() {
-  if (!ocrSample) return;
+/** Guarda el texto reconocido de una página. */
+function applyOcrText(pageNumber, text) {
+  const clean = (text || "").trim();
+  if (!clean || clean === "[sin texto]") return false;
+  const target = state.pages.find((p) => p.pageNumber === pageNumber);
+  if (!target) return false;
+  target.text = clean;
+  return true;
+}
 
-  const from = Math.max(1, Number($("ocrFrom").value) || 1);
-  const to = Math.min(state.pageCount, Number($("ocrTo").value) || from);
-  const targets = state.scannedPages.filter((n) => n >= from && n <= to);
+/** Un grupo de páginas en una sola consulta. */
+async function ocrBatch(pages) {
+  const blobs = [];
+  for (const pageNumber of pages) {
+    const blob = await pageToBlob(pageNumber);
+    if (blob) blobs.push({ pageNumber, blob });
+  }
+  if (!blobs.length) return 0;
 
-  if (!targets.length) {
-    $("ocrCost").textContent = "En ese rango no hay páginas sin texto. Prueba con otro.";
-    return;
+  const numbers = blobs.map((b) => b.pageNumber);
+  const images = blobs.map((b) => b.blob);
+
+  if (images.length === 1) {
+    const answer = await ocrSample(
+      OCR_RULES + "\n\nEs la página " + numbers[0] +
+        ". Responde solo con la transcripción, sin comentarios.",
+      { images, signal: ocrAbort.signal },
+    );
+    return applyOcrText(numbers[0], answer.text) ? 1 : 0;
   }
 
-  ocrAbort = new AbortController();
-  $("ocrStart").disabled = true;
-  $("ocrProgress").classList.remove("hidden");
-  $("ocrPreview").textContent = "";
+  const prompt =
+    OCR_RULES + "\n\nRecibes " + images.length + " imágenes: son las páginas " +
+    numbers.join(", ") + ", en ese orden.\n" +
+    'Responde solo con un array JSON, un objeto por imagen y en el mismo orden: ' +
+    '[{"pagina": ' + numbers[0] + ', "texto": "..."}]. ' +
+    'Si una página no tiene texto, deja "texto" vacío.';
 
-  let done = 0;
   let recovered = 0;
-
-  const paint = () => {
-    $("ocrStatus").textContent = "Reconociendo página " + Math.min(done + 1, targets.length) +
-      " de " + targets.length + "…";
-    $("ocrBar").style.width = Math.round((done / targets.length) * 100) + "%";
-  };
-  paint();
-
   try {
-    for (const pageNumber of targets) {
-      if (ocrAbort.signal.aborted) break;
-
-      const blob = await pageToBlob(pageNumber, 1500);
-      if (!blob) { done += 1; paint(); continue; }
-
-      const answer = await ocrSample(
-        OCR_PROMPT + "\n\n(Página " + pageNumber + " de " + state.pageCount + ")",
-        { images: [blob], signal: ocrAbort.signal, modelTier: "default" },
-      );
-
-      const text = (answer.text || "").trim();
-      if (text && text !== "[sin texto]") {
-        const target = state.pages.find((p) => p.pageNumber === pageNumber);
-        if (target) target.text = text;
-        recovered += 1;
-        $("ocrPreview").textContent = text.slice(0, 400);
-      }
-
-      done += 1;
-      paint();
-    }
+    const data = await ocrSample.json(prompt, { images, signal: ocrAbort.signal });
+    const list = Array.isArray(data) ? data : [];
+    list.forEach((item, index) => {
+      const declared = Number(item && item.pagina);
+      const pageNumber = numbers.includes(declared) ? declared : numbers[index];
+      if (pageNumber && applyOcrText(pageNumber, item && item.texto)) recovered += 1;
+    });
   } catch (error) {
-    const code = (error && error.code) || "";
-    if (code !== "cancelled") {
-      $("ocrStatus").textContent = ocrErrorMessage(code);
-      $("ocrStart").disabled = false;
-      if (recovered === 0) return;
+    if ((error && error.code) !== "invalid_json") throw error;
+    // El modelo no devolvió JSON: se reintenta página a página.
+    for (const entry of blobs) {
+      if (ocrAbort.signal.aborted) break;
+      const answer = await ocrSample(
+        OCR_RULES + "\n\nEs la página " + entry.pageNumber +
+          ". Responde solo con la transcripción.",
+        { images: [entry.blob], signal: ocrAbort.signal },
+      );
+      if (applyOcrText(entry.pageNumber, answer.text)) recovered += 1;
     }
   }
-
-  $("ocrProgress").classList.add("hidden");
-  $("ocrStart").disabled = false;
-
-  if (recovered === 0) {
-    $("ocrCost").textContent =
-      "No hemos podido reconocer texto en esas páginas. Prueba con otras o con un escaneo de más calidad.";
-    return;
-  }
-
-  state.usedOcr = true;
-  // Las páginas que no se han reconocido se quedan fuera del material: no se
-  // inventa nada. El PDF original sigue teniendo todas sus páginas.
-  state.pages = state.pages.filter((p) => p.text.replace(/\s/g, "").length >= 25);
-  $("ocrPanel").classList.add("hidden");
-  $("workError").classList.add("hidden");
-  await finishProcessing();
+  return recovered;
 }
 
 function ocrErrorMessage(code) {
@@ -1811,11 +1832,130 @@ function ocrErrorMessage(code) {
     return "No has dado permiso para usar Claude en esta página.";
   }
   if (code === "rate_limited") {
-    return "Has llegado al límite de consultas por ahora. Inténtalo dentro de un rato.";
+    return "Has llegado al límite de consultas de tu cuenta. Espera unos minutos y pulsa «Continuar»: no se pierde lo ya reconocido.";
   }
   if (code === "session_expired") return "Tu sesión ha caducado: vuelve a entrar en Claude.";
-  if (code === "image_rejected") return "Esa página no se ha podido enviar como imagen.";
-  return "Ha fallado el reconocimiento. Puedes volver a intentarlo.";
+  if (code === "image_rejected") return "Alguna página no se ha podido enviar como imagen.";
+  if (code === "prompt_too_large") return "Esa página trae demasiado texto de una vez.";
+  return "Ha fallado el reconocimiento. Pulsa «Continuar» para seguir donde se quedó.";
+}
+
+/** Reconoce el rango elegido, en lotes y con dos consultas a la vez. */
+async function runOcr() {
+  if (!ocrSample || ocrRunning) return;
+
+  const targets = ocrTargets();
+  if (!targets.length) {
+    $("ocrCost").textContent =
+      "En ese rango ya está todo reconocido. Amplía el rango o continúa con el material.";
+    return;
+  }
+
+  ocrRunning = true;
+  ocrAbort = new AbortController();
+  $("ocrStart").disabled = true;
+  $("ocrAll").disabled = true;
+  $("ocrProgress").classList.remove("hidden");
+  $("ocrPreview").textContent = "";
+  $("ocrStatus").textContent = "Preparando…";
+
+  const size = Math.max(1, Math.min(ocrSample.__maxImages || 1, 4));
+  const batches = [];
+  for (let i = 0; i < targets.length; i += size) batches.push(targets.slice(i, i + size));
+
+  let cursor = 0;
+  let done = 0;
+  let recovered = 0;
+  let stoppedBy = null;
+  const started = Date.now();
+
+  const paint = () => {
+    const percent = Math.round((done / targets.length) * 100);
+    $("ocrBar").style.width = percent + "%";
+    // La barra grande también avanza: antes se quedaba clavada.
+    setProgress(10 + percent * 0.4, state.pageCount + " páginas · reconociendo texto");
+
+    let eta = "";
+    if (done > 0 && done < targets.length) {
+      const perPage = (Date.now() - started) / done;
+      const left = Math.round((perPage * (targets.length - done)) / 60000);
+      eta = left >= 1 ? " · quedan unos " + left + " min" : " · queda menos de 1 min";
+    }
+    $("ocrStatus").textContent = "Reconocidas " + done + " de " + targets.length +
+      " páginas" + eta;
+  };
+  paint();
+
+  const worker = async () => {
+    for (;;) {
+      if (ocrAbort.signal.aborted || stoppedBy) return;
+      const batch = batches[cursor++];
+      if (!batch) return;
+      try {
+        const got = await ocrBatch(batch);
+        recovered += got;
+        const first = state.pages.find((p) => p.pageNumber === batch[0]);
+        if (first && first.text) $("ocrPreview").textContent = first.text.slice(0, 300);
+      } catch (error) {
+        const code = (error && error.code) || "";
+        if (code === "cancelled") return;
+        stoppedBy = code || "error";
+        return;
+      }
+      done += batch.length;
+      state.ocrDone = done;
+      paint();
+    }
+  };
+
+  await Promise.all([worker(), worker()]);
+
+  ocrRunning = false;
+  $("ocrProgress").classList.add("hidden");
+  $("ocrStart").disabled = false;
+  $("ocrAll").disabled = false;
+
+  const pending = ocrTargets().length;
+
+  if (stoppedBy) {
+    $("ocrCost").textContent = ocrErrorMessage(stoppedBy);
+    $("ocrStart").textContent = "Continuar";
+    if (recovered === 0) return;
+  }
+
+  if (recovered === 0) {
+    $("ocrCost").textContent =
+      "No hemos podido reconocer texto en esas páginas. Prueba con otras o con un escaneo de más calidad.";
+    return;
+  }
+
+  if (pending > 0 && !stoppedBy && ocrAbort.signal.aborted) {
+    // Parado a mano: se ofrece seguir o montar el material con lo que hay.
+    $("ocrCost").textContent = "Parado. Quedan " + pending +
+      " páginas por reconocer; puedes continuar o seguir con lo que ya hay.";
+    $("ocrStart").textContent = "Continuar";
+    $("ocrBuild").classList.remove("hidden");
+    return;
+  }
+
+  await buildFromOcr();
+}
+
+/** Monta el material con las páginas reconocidas hasta ahora. */
+async function buildFromOcr() {
+  if (ocrAbort) ocrAbort.abort();
+  ocrRunning = false;
+  state.usedOcr = true;
+  // Las páginas que no se han reconocido se quedan fuera del material: no se
+  // inventa nada. El PDF original sigue teniendo todas sus páginas.
+  state.pages = state.pages.filter((p) => p.text.replace(/\s/g, "").length >= 25);
+  if (!state.pages.length) {
+    $("ocrCost").textContent = "No hay texto reconocido con el que montar el material.";
+    return;
+  }
+  $("ocrPanel").classList.add("hidden");
+  $("workError").classList.add("hidden");
+  await finishProcessing();
 }
 
 /** Resumen, esquema y audio. Se rehace al cambiar el nivel de detalle. */
@@ -1873,11 +2013,29 @@ function renderSummary() {
       .join("");
   }
 
+  // En un temario largo se pintan solo los apartados que se acercan a la
+  // pantalla: hacerlo todo de golpe bloquearía el móvil varios segundos.
+  const perezoso = state.analyses.length > 8 && typeof IntersectionObserver !== "undefined";
+  const observer = perezoso
+    ? new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const card = entry.target;
+            observer.unobserve(card);
+            card.querySelector(".prose").innerHTML = renderMarkdown(card.__markdown);
+            card.style.minHeight = "";
+          }
+        },
+        { rootMargin: "700px 0px" },
+      )
+    : null;
+
   state.analyses.forEach((analysis, index) => {
     const card = document.createElement("section");
     card.className = "card pad";
     card.id = "s" + index;
-    card.innerHTML =
+    const cabecera =
       '<div class="row" style="justify-content:space-between; margin-bottom:10px">' +
         (analysis.sourcePages.length
           ? '<button class="pageref" data-page="' + analysis.sourcePages[0] + '">' +
@@ -1887,8 +2045,22 @@ function renderSummary() {
             "</button>"
           : "<span></span>") +
         '<button class="ghost tiny" data-listen="' + index + '">🎧 Escuchar este apartado</button>' +
-      "</div>" +
-      '<div class="prose">' + renderMarkdown(analysis.markdown) + "</div>";
+      "</div>";
+
+    const diferido = perezoso && index > 2;
+    card.innerHTML = cabecera + '<div class="prose">' +
+      (diferido
+        ? '<h3>' + escapeHtml(analysis.title) + "</h3>" +
+          '<div class="skeleton" style="height:12px; margin:10px 0"></div>' +
+          '<div class="skeleton" style="height:12px; margin:10px 0; width:80%"></div>'
+        : renderMarkdown(analysis.markdown)) +
+      "</div>";
+
+    if (diferido) {
+      card.__markdown = analysis.markdown;
+      card.style.minHeight = Math.min(700, 140 + analysis.markdown.length / 7) + "px";
+      observer.observe(card);
+    }
     body.appendChild(card);
   });
 }
@@ -2300,10 +2472,16 @@ document.addEventListener("click", (event) => {
 
 /* Reconocimiento de texto */
 $("ocrStart").addEventListener("click", () => { void runOcr(); });
+$("ocrAll").addEventListener("click", () => {
+  if (!state.scannedPages.length) return;
+  $("ocrFrom").value = String(state.scannedPages[0]);
+  $("ocrTo").value = String(state.scannedPages[state.scannedPages.length - 1]);
+  void runOcr();
+});
+$("ocrBuild").addEventListener("click", () => { void buildFromOcr(); });
 $("ocrStop").addEventListener("click", () => {
   if (ocrAbort) ocrAbort.abort();
-  $("ocrStatus").textContent = "Parado.";
-  $("ocrStart").disabled = false;
+  $("ocrStatus").textContent = "Parando…";
 });
 $("ocrExample").addEventListener("click", () => {
   if (ocrAbort) ocrAbort.abort();
