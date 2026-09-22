@@ -58,6 +58,14 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 docker compose up --build
 ```
 
+### Opción B2 · tenerla como aplicación en el móvil
+
+Publicar el servidor una vez y añadirla a la pantalla de inicio: icono propio,
+pantalla completa, con tu cuenta y tu biblioteca. Se puede hacer entero desde el
+móvil con el fichero [`render.yaml`](render.yaml) que ya lleva el repositorio.
+
+El paso a paso está en **[`docs/publicar.md`](docs/publicar.md)**.
+
 ### Opción C · solo mirar, sin instalar nada
 
 `demo/estudia-demo.html` es una página suelta que lleva el motor dentro y

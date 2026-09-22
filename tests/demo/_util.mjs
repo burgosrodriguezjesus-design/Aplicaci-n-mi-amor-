@@ -1,5 +1,6 @@
 /** Utilidades compartidas por las pruebas de navegador de la demo. */
 import { chromium } from "playwright";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -13,10 +14,14 @@ export function fixture(nombre) {
 }
 
 /** Abre la demo con un puente de Claude a medida (o sin ninguno). */
+/** Chromium: el que diga el entorno, el preinstalado, o el de Playwright. */
+export function navegador() {
+  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
+  return existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : undefined;
+}
+
 export async function abrir(puente) {
-  const browser = await chromium.launch({
-    executablePath: process.env.CHROMIUM_PATH || "/opt/pw-browsers/chromium",
-  });
+  const browser = await chromium.launch({ executablePath: navegador() });
   const page = await browser.newPage();
   const errores = [];
   page.on("pageerror", (e) => errores.push(e.message));

@@ -17,5 +17,16 @@ node tests/demo/run.mjs              # levanta el servidor y pasa las 4 pruebas
 | `ocr-claude.mjs` | Cuando Claude sí puede ver imágenes, se usa esa vía (más rápida). |
 | `ocr-libro.mjs` | 24 páginas escaneadas seguidas: mide el ritmo real por página. |
 
+Y una más, que necesita la aplicación completa levantada (`npm start`):
+
+| Prueba | Qué asegura |
+| --- | --- |
+| `instalable.mjs` | Manifiesto, iconos y comprobación de salud correctos; en iPhone se explica dónde tocar para instalar; una vez instalada deja de ofrecerse. |
+
+```bash
+npm start            # en una terminal
+npm run test:instalable
+```
+
 El servidor local sirve `pdf.js` desde `node_modules` porque el entorno de
 desarrollo no siempre alcanza la CDN; la versión publicada sí la usa.

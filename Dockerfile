@@ -5,6 +5,11 @@ FROM node:22-slim
 
 WORKDIR /app
 
+# Playwright solo se usa para las pruebas en un navegador real: aquí no debe
+# descargarse ningún navegador, que son cientos de megas y alargan el despliegue.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_BROWSERS_PATH=0
+
 # Dependencias primero, para aprovechar la caché de capas.
 COPY package.json package-lock.json ./
 COPY prisma ./prisma

@@ -70,7 +70,14 @@ function servir() {
 
 const pruebas = process.env.DEMO_ONLY
   ? process.env.DEMO_ONLY.split(",")
-  : ["estructura.mjs", "repaso-ia.mjs", "ocr-local.mjs", "ocr-fallback.mjs", "ocr-claude.mjs", "ocr-libro.mjs"];
+  : [
+      "estructura.mjs",
+      "repaso-ia.mjs",
+      "ocr-local.mjs",
+      "ocr-fallback.mjs",
+      "ocr-claude.mjs",
+      "ocr-libro.mjs",
+    ];
 
 await preparar();
 const server = await servir();

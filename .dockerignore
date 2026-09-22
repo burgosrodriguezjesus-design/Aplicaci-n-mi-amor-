@@ -1,9 +1,26 @@
+# Lo que no debe entrar en la imagen: ni hace falta para ejecutar la
+# aplicación, ni conviene que viaje a un servidor.
 node_modules
 .next
 .git
+.github
+
+# Datos locales: la base de datos y los PDF viven en el volumen /data.
 storage
 prisma/*.db
+prisma/*.db-journal
+*.log
+/tmp
+
+# Secretos: en el servidor se configuran como variables de entorno.
 .env
 .env.local
-/tmp
-*.log
+.env.*.local
+
+# Material solo de desarrollo y pruebas.
+demo/assets
+tests
+.tmp-demo-web
+docs
+*.md
+!README.md

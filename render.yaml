@@ -1,0 +1,61 @@
+# Publicar EstudIA en Render.
+#
+# Esto es un "Blueprint": Render lee este fichero del repositorio y crea el
+# servicio entero solo, sin instalar nada en tu ordenador. Se puede hacer desde
+# el móvil: https://dashboard.render.com → New → Blueprint → elegir este repo.
+#
+# Qué crea:
+#   - un servicio web construido con el Dockerfile del repositorio,
+#   - un disco de 5 GB montado en /data, donde viven la base de datos y los PDF,
+#   - el secreto de sesión, generado solo la primera vez.
+#
+# El disco es lo que hace que tus apuntes sigan ahí después de cada despliegue,
+# y los planes con disco de Render son de pago (unos 7 $/mes el más pequeño).
+#
+# Para reescribir los resúmenes con IA, añade ANTHROPIC_API_KEY en el panel de
+# Render (Environment). Nunca la escribas aquí: este fichero va al repositorio.
+
+services:
+  - type: web
+    name: estudia
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Plan con disco. "standard" (2 GB de RAM) va bastante mejor con libros
+    # enteros escaneados; "starter" (512 MB) sirve para temarios normales.
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+    disk:
+      name: datos
+      mountPath: /data
+      sizeGB: 5
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # La base de datos y los ficheros van al disco, no a la imagen.
+      - key: DATABASE_URL
+        value: file:/data/estudia.db
+      - key: STORAGE_DRIVER
+        value: local
+      - key: STORAGE_DIR
+        value: /data/storage
+      # Se genera una vez y no cambia: si cambiara, se cerrarían las sesiones.
+      - key: AUTH_SECRET
+        generateValue: true
+      # Ajustes pensados para 512 MB de RAM. Con el plan "standard" puedes
+      # subir OCR_CONCURRENCY a 3 y OCR_SCALE a 1.6 para ir más rápido.
+      - key: OCR_CONCURRENCY
+        value: "1"
+      - key: OCR_SCALE
+        value: "1.4"
+      - key: AI_CONCURRENCY
+        value: "2"
+      - key: MAX_UPLOAD_MB
+        value: "80"
+      - key: MAX_PDF_PAGES
+        value: "1500"
+      - key: OCR_MAX_PAGES
+        value: "600"
