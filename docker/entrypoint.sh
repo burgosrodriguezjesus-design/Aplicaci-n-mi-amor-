@@ -14,8 +14,13 @@ fi
 
 mkdir -p "${STORAGE_DIR:-/data/storage}"
 
-# Crea o actualiza las tablas antes de arrancar.
-npx prisma db push --skip-generate >/dev/null
+# La imagen se construye sin saber que base de datos habra: en un alojamiento
+# gratuito es PostgreSQL y en casa SQLite, y eso lo decide DATABASE_URL en el
+# momento de arrancar. Por eso el esquema y el cliente se ajustan aqui, no al
+# construir, y despues se crean o actualizan las tablas.
+PRISMA_SCHEMA_QUIET=1 node scripts/prisma-schema.mjs
+npx prisma generate --schema=prisma/schema.runtime.prisma >/dev/null
+npx prisma db push --schema=prisma/schema.runtime.prisma --skip-generate >/dev/null
 
 echo "EstudIA listo en http://localhost:3000"
 exec "$@"

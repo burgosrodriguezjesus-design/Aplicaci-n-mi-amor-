@@ -11,15 +11,39 @@ const comprobar = (titulo, ok) => {
 
 const browser = await chromium.launch({ executablePath: navegador() });
 
+// Cuenta propia: la prueba no depende de que alguien haya sembrado datos.
+const cuenta = {
+  email: `instalable-${Date.now()}@prueba.local`,
+  password: "contrasena-de-prueba",
+};
+
+async function crearCuenta() {
+  const respuesta = await fetch(base + "/api/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "Prueba Instalable",
+      email: cuenta.email,
+      password: cuenta.password,
+      educationLevel: "FP",
+    }),
+  });
+  if (respuesta.status !== 201) {
+    throw new Error(`No se ha podido crear la cuenta de prueba (${respuesta.status})`);
+  }
+}
+
 async function entrar(context) {
   const page = await context.newPage();
   await page.goto(base + "/login");
-  await page.fill('input[type="email"]', "demo@estudia.local");
-  await page.fill('input[type="password"]', "estudia1234");
+  await page.fill('input[type="email"]', cuenta.email);
+  await page.fill('input[type="password"]', cuenta.password);
   await page.click('button[type="submit"]');
   await page.waitForURL(/\/inicio/, { timeout: 30000 });
   return page;
 }
+
+await crearCuenta();
 
 // ── 1. El manifiesto y los iconos existen y son coherentes
 const plano = await browser.newContext();

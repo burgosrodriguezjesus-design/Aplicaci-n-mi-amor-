@@ -58,13 +58,20 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 docker compose up --build
 ```
 
-### Opción B2 · tenerla como aplicación en el móvil
+### Opción B2 · tenerla como aplicación en el móvil, gratis
 
 Publicar el servidor una vez y añadirla a la pantalla de inicio: icono propio,
 pantalla completa, con tu cuenta y tu biblioteca. Se puede hacer entero desde el
-móvil con el fichero [`render.yaml`](render.yaml) que ya lleva el repositorio.
+móvil, sin instalar nada, con el fichero [`render.yaml`](render.yaml) que ya
+lleva el repositorio.
 
-El paso a paso está en **[`docs/publicar.md`](docs/publicar.md)**.
+Son tres cuentas gratuitas, y hacen falta las tres porque **ningún alojamiento
+gratuito da disco que sobreviva a un reinicio**: Render ejecuta la aplicación,
+Neon guarda la base de datos y Cloudflare R2 los PDF. La aplicación no guarda
+nada en sí misma, así que da igual cuántas veces se reinicie.
+
+El paso a paso, con dónde sacar cada dato, está en
+**[`docs/publicar.md`](docs/publicar.md)**.
 
 ### Opción C · solo mirar, sin instalar nada
 
@@ -96,9 +103,10 @@ suelto, descarga en Markdown, aislamiento entre cuentas y borrado.
 Y dos pruebas más, que no necesitan servidor:
 
 ```bash
-npm run test:estructura   # entiende el índice de un temario y lo trocea bien
-npm run demo:assets       # motor de lectura local de la demo (una vez)
-npm run test:demo         # la demo entera en un navegador real
+npm run test:estructura      # entiende el índice de un temario y lo trocea bien
+npm run test:almacenamiento  # el guardado compatible con S3, firma incluida
+npm run demo:assets          # motor de lectura local de la demo (una vez)
+npm run test:demo            # la demo entera en un navegador real
 ```
 
 `test:estructura` comprueba lo que más se nota en un libro de verdad: que el

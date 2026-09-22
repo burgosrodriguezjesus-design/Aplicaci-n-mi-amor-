@@ -71,7 +71,28 @@ const localDriver: StorageDriver = {
   },
 };
 
-export const storage: StorageDriver = localDriver;
+/**
+ * El driver se elige con STORAGE_DRIVER. El de S3 se carga solo si se pide,
+ * para que quien use la aplicacion en su ordenador no cargue con nada.
+ */
+function elegirDriver(): StorageDriver {
+  if (env.storage.driver !== "s3") return localDriver;
+
+  // Import perezoso: `require` aqui es deliberado, el resto del fichero es
+  // sincrono y el driver debe estar listo antes del primer uso.
+  const { s3Driver, s3Configurado } =
+    require("./s3") as typeof import("./s3");
+
+  const problema = s3Configurado();
+  if (problema) {
+    throw new Error(
+      `STORAGE_DRIVER="s3" pero el almacenamiento no esta completo. ${problema}`,
+    );
+  }
+  return s3Driver;
+}
+
+export const storage: StorageDriver = elegirDriver();
 
 export function buildDocumentKey(userId: string, originalName: string) {
   const safeExt = path.extname(originalName).toLowerCase() === ".pdf" ? ".pdf" : ".pdf";

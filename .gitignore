@@ -29,3 +29,7 @@ demo/assets/
 # PDF de prueba grande (se regenera con tests/fixtures/generar-escaneado-largo.py)
 tests/fixtures/escaneado-largo.pdf
 .tmp-demo-web/
+
+# Esquema de Prisma generado segun DATABASE_URL
+prisma/schema.runtime.prisma
+

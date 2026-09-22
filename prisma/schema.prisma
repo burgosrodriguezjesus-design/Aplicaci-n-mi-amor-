@@ -4,7 +4,11 @@
 
 generator client {
   provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
+  // Sin `output`: el cliente se genera dentro de node_modules, que es donde
+  // Next lo deja fuera del empaquetado (serverExternalPackages). Asi se puede
+  // regenerar al arrancar el contenedor, cuando por fin se sabe si la base de
+  // datos es SQLite o PostgreSQL. Con una ruta propia, Next lo empaquetaba al
+  // construir y el cliente se quedaba clavado en el motor equivocado.
 }
 
 datasource db {

@@ -57,8 +57,18 @@ export const env = {
   },
 
   storage: {
+    // "local" guarda en disco; "s3" en cualquier servicio compatible con S3
+    // (Cloudflare R2, Supabase, Backblaze B2...), que es lo que hace falta
+    // cuando el alojamiento no tiene disco persistente.
     driver: str("STORAGE_DRIVER", "local"),
     dir: str("STORAGE_DIR", "./storage"),
+    s3: {
+      endpoint: str("STORAGE_S3_ENDPOINT"),
+      bucket: str("STORAGE_S3_BUCKET"),
+      region: str("STORAGE_S3_REGION", "auto"),
+      accessKeyId: str("STORAGE_S3_ACCESS_KEY_ID"),
+      secretAccessKey: str("STORAGE_S3_SECRET_ACCESS_KEY"),
+    },
   },
 
   limits: {

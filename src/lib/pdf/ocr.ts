@@ -303,6 +303,12 @@ export async function ocrPages(
   pdfPath: string,
   pageNumbers: number[],
   onProgress?: (done: number, total: number) => void | Promise<void>,
+  /**
+   * Se llama en cuanto una pagina queda reconocida, no al final. Permite
+   * guardarla ya: si el proceso muere a mitad -un alojamiento gratuito se
+   * duerme solo- no se pierde el trabajo hecho hasta ese momento.
+   */
+  onPage?: (result: OcrResult) => void | Promise<void>,
 ): Promise<OcrResult[]> {
   const engine = ocrEngine();
   if (engine === "none" || pageNumbers.length === 0) return [];
@@ -350,7 +356,11 @@ export async function ocrPages(
                     )
                   ).data.text.trim()
                 : await transcribeWithAnthropic(png);
-            if (text) results.push({ pageNumber, text, engine });
+            if (text) {
+              const result: OcrResult = { pageNumber, text, engine };
+              results.push(result);
+              await onPage?.(result);
+            }
           } catch {
             /* página no transcribible: se deja vacía */
           }

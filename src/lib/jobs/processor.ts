@@ -98,15 +98,41 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
     );
   }
 
+  // Lo ya reconocido en un intento anterior se conserva. En un alojamiento
+  // que se duerme cuando nadie lo usa, un libro escaneado largo puede
+  // necesitar varias vueltas: empezar de cero cada vez seria no acabar nunca.
+  const yaReconocidas = new Map<number, string>();
+  const previas = await prisma.documentPage.findMany({
+    where: { documentId, source: "OCR" },
+    select: { pageNumber: true, text: true },
+  });
+  for (const pagina of previas) {
+    if (pagina.text.replace(/\s/g, "").length >= 40) {
+      yaReconocidas.set(pagina.pageNumber, pagina.text);
+    }
+  }
+
   await prisma.documentPage.deleteMany({ where: { documentId } });
   await prisma.documentPage.createMany({
-    data: extraction.pages.map((page) => ({
-      documentId,
-      pageNumber: page.pageNumber,
-      text: page.text,
-      charCount: page.charCount,
-      source: page.source,
-    })),
+    data: extraction.pages.map((page) => {
+      const recuperada = yaReconocidas.get(page.pageNumber);
+      if (recuperada) {
+        return {
+          documentId,
+          pageNumber: page.pageNumber,
+          text: recuperada,
+          charCount: recuperada.replace(/\s/g, "").length,
+          source: "OCR",
+        };
+      }
+      return {
+        documentId,
+        pageNumber: page.pageNumber,
+        text: page.text,
+        charCount: page.charCount,
+        source: page.source,
+      };
+    }),
   });
 
   await prisma.document.update({
@@ -117,14 +143,17 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
     },
   });
 
-  let usedOcr = false;
+  let usedOcr = yaReconocidas.size > 0;
 
-  if (extraction.scannedPages.length > 0) {
+  // Solo se reconocen las que siguen sin texto.
+  const pendientesDeOcr = extraction.scannedPages.filter((n) => !yaReconocidas.has(n));
+
+  if (pendientesDeOcr.length > 0) {
     if (ocrAvailable()) {
       // Un libro escaneado entero gasta una llamada de visión por página:
       // el tope evita sorpresas en la factura y en el tiempo de espera.
-      const targets = extraction.scannedPages.slice(0, env.limits.ocrMaxPages);
-      const omitted = extraction.scannedPages.length - targets.length;
+      const targets = pendientesDeOcr.slice(0, env.limits.ocrMaxPages);
+      const omitted = pendientesDeOcr.length - targets.length;
 
       await setStatus(
         documentId,
@@ -141,7 +170,7 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
           where: { id: documentId },
           data: {
             errorCode: "OCR_PARTIAL",
-            errorMessage: `El documento tiene ${extraction.scannedPages.length} páginas escaneadas y solo reconocemos las primeras ${targets.length}. Sube el resto en otro PDF o sube el límite con OCR_MAX_PAGES.`,
+            errorMessage: `El documento tiene ${extraction.scannedPages.length} páginas escaneadas y en esta pasada se reconocen ${targets.length}. Vuelve a procesarlo para seguir con las que falten —lo ya reconocido se conserva— o sube el límite con OCR_MAX_PAGES.`,
           },
         });
       }
@@ -150,35 +179,38 @@ async function extractPages(documentId: string, jobId: string, data: Buffer) {
       // borra al terminar, pase lo que pase.
       const workDir = await mkdtemp(path.join(os.tmpdir(), "estudia-ocr-"));
       const pdfPath = path.join(workDir, "documento.pdf");
-      let results: Awaited<ReturnType<typeof ocrPages>> = [];
 
       try {
         await writeFile(pdfPath, data);
-        results = await ocrPages(pdfPath, targets, async (done, total) => {
-          await setStatus(
-            documentId,
-            jobId,
-            "EXTRACTING",
-            `Reconociendo texto de imágenes (${done}/${total})…`,
-            18 + Math.round((done / total) * 12),
-          );
-        });
+        await ocrPages(
+          pdfPath,
+          targets,
+          async (done, total) => {
+            await setStatus(
+              documentId,
+              jobId,
+              "EXTRACTING",
+              `Reconociendo texto de imágenes (${done}/${total})…`,
+              18 + Math.round((done / total) * 12),
+            );
+          },
+          // Cada página se guarda nada más reconocerla, no al final.
+          async (result) => {
+            usedOcr = true;
+            await prisma.documentPage.update({
+              where: {
+                documentId_pageNumber: { documentId, pageNumber: result.pageNumber },
+              },
+              data: {
+                text: result.text,
+                charCount: result.text.replace(/\s/g, "").length,
+                source: "OCR",
+              },
+            });
+          },
+        );
       } finally {
         await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
-      }
-
-      for (const result of results) {
-        usedOcr = true;
-        await prisma.documentPage.update({
-          where: {
-            documentId_pageNumber: { documentId, pageNumber: result.pageNumber },
-          },
-          data: {
-            text: result.text,
-            charCount: result.text.replace(/\s/g, "").length,
-            source: "OCR",
-          },
-        });
       }
     }
   }

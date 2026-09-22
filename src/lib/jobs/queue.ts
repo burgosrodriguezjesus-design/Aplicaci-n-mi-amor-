@@ -44,12 +44,21 @@ export async function updateJob(
   await prisma.processingJob.update({ where: { id: jobId }, data });
 }
 
-/** Marca como fallidos los trabajos que quedaron colgados tras un reinicio. */
+/**
+ * Vuelve a encolar los trabajos que quedaron a medias tras un reinicio.
+ *
+ * Esto se llama al arrancar el proceso, y la cola vive dentro del propio
+ * proceso: cualquier trabajo marcado como RUNNING pertenecia al proceso
+ * anterior, que ya no existe. Por eso no se espera a que pase un rato -antes
+ * habia que esperar quince minutos-, que es justo lo que dejaba colgado un
+ * libro a medio reconocer en un alojamiento que se duerme solo.
+ *
+ * Lo ya reconocido no se pierde: cada pagina se guarda al terminarla.
+ */
 export async function recoverStuckJobs() {
-  const cutoff = new Date(Date.now() - 15 * 60 * 1000);
   await prisma.processingJob.updateMany({
-    where: { status: "RUNNING", updatedAt: { lt: cutoff } },
-    data: { status: "QUEUED", message: "Reanudando tras un reinicio…" },
+    where: { status: "RUNNING" },
+    data: { status: "QUEUED", message: "Reanudando donde se quedó…" },
   });
 }
 
