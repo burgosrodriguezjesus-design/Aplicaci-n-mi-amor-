@@ -18,10 +18,24 @@ export type Pendiente = {
   motivo: string;
   /** Nombres de variables de base de datos presentes. Nunca sus valores. */
   variables: string[];
+  /** Que version esta corriendo, para saber si el despliegue es el nuevo. */
+  version: string;
 };
+
+/**
+ * Identificador corto de lo que esta publicado.
+ *
+ * Sirve para responder a la pregunta que mas tiempo hace perder: "¿esto que
+ * estoy viendo es el arreglo nuevo o el despliegue de antes?".
+ */
+export function versionPublicada(): string {
+  const commit = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.RENDER_GIT_COMMIT ?? "";
+  return commit ? commit.slice(0, 7) : "local";
+}
 
 export async function loQueFalta(): Promise<Pendiente | null> {
   const variables = nombresDeBaseDeDatosVistos();
+  const version = versionPublicada();
 
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -32,6 +46,7 @@ export async function loQueFalta(): Promise<Pendiente | null> {
       tipo: variables.length === 0 ? "sin-base" : "error",
       motivo,
       variables,
+      version,
     };
   }
 }

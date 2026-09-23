@@ -12,6 +12,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { env, nombresDeBaseDeDatosVistos } from "@/lib/env";
+import { versionPublicada } from "@/lib/setup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,6 +64,7 @@ export async function GET() {
   return NextResponse.json(
     {
       ok,
+      version: versionPublicada(),
       database,
       storage: { ...storage, driver: env.storage.driver },
     },

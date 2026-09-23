@@ -35,6 +35,7 @@ export default async function LandingPage() {
         tipo={pendiente.tipo}
         motivo={pendiente.motivo}
         variables={pendiente.variables}
+        version={pendiente.version}
       />
     );
   }
