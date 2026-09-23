@@ -11,17 +11,20 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { env } from "@/lib/env";
+import { env, nombresDeBaseDeDatosVistos } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function comprobarBaseDeDatos() {
+  // Se dicen los NOMBRES de las variables que hay puestas, nunca sus valores:
+  // saber si la base de datos esta conectada es media diagnostico.
+  const variables = nombresDeBaseDeDatosVistos();
   try {
     await prisma.$queryRaw`SELECT 1`;
-    return { ok: true as const };
+    return { ok: true as const, variables };
   } catch (error) {
-    return { ok: false as const, error: mensaje(error) };
+    return { ok: false as const, error: mensaje(error), variables };
   }
 }
 

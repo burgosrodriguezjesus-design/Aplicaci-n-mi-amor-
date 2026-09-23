@@ -16,16 +16,7 @@ import { fileURLToPath } from "node:url";
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCHEMA = "prisma/schema.runtime.prisma";
 
-/** Vercel inyecta la dirección de la base de datos con otros nombres. */
-function direccionBaseDeDatos() {
-  return (
-    process.env.DATABASE_URL ||
-    process.env.POSTGRES_PRISMA_URL ||
-    process.env.POSTGRES_URL_NON_POOLING ||
-    process.env.POSTGRES_URL ||
-    ""
-  );
-}
+import { direccion as direccionBaseDeDatos, NOMBRES_URL } from "./prisma-schema.mjs";
 
 function ejecutar(orden, args) {
   return new Promise((resolve) => {
@@ -51,7 +42,18 @@ if (faltaBaseDeDatos) {
   );
 }
 
-process.env.DATABASE_URL = url || "file:./dev.db";
+// Si viene con otro nombre, se normaliza para que Prisma la encuentre.
+if (url) process.env.DATABASE_URL = url;
+else if (!enVercel) process.env.DATABASE_URL = "file:./dev.db";
+
+if (faltaBaseDeDatos) {
+  const vistas = NOMBRES_URL.filter((nombre) => process.env[nombre]);
+  console.warn(
+    "  Variables de base de datos que se ven al construir: " +
+      (vistas.length ? vistas.join(", ") : "ninguna") +
+      "\n",
+  );
+}
 
 const pasos = [
   ["node", ["scripts/prisma-schema.mjs"]],

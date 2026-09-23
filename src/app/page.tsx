@@ -29,7 +29,15 @@ export default async function LandingPage() {
   // Recién publicada puede faltar la base de datos: mejor explicarlo que
   // enseñar una pantalla de error que no dice qué hacer.
   const pendiente = await loQueFalta();
-  if (pendiente) return <PantallaDeConfiguracion motivo={pendiente.motivo} />;
+  if (pendiente) {
+    return (
+      <PantallaDeConfiguracion
+        tipo={pendiente.tipo}
+        motivo={pendiente.motivo}
+        variables={pendiente.variables}
+      />
+    );
+  }
 
   const user = await getCurrentUser();
   if (user) redirect("/inicio");

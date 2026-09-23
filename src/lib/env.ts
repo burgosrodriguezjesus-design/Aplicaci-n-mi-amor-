@@ -30,14 +30,45 @@ const authSecret = str("AUTH_SECRET");
  * Vercel, cuando creas la base de datos desde su panel, inyecta la variable
  * con otros nombres. Se aceptan todos para que no haya que copiar nada a mano.
  */
+export const NOMBRES_BASE_DE_DATOS = [
+  "DATABASE_URL",
+  "POSTGRES_PRISMA_URL",
+  "POSTGRES_URL_NON_POOLING",
+  "POSTGRES_URL",
+  "DATABASE_URL_UNPOOLED",
+  "NEON_DATABASE_URL",
+  "POSTGRES_URL_NO_SSL",
+] as const;
+
+/** Que nombres de esos estan puestos. Solo los nombres, nunca los valores. */
+export function nombresDeBaseDeDatosVistos(): string[] {
+  return NOMBRES_BASE_DE_DATOS.filter((nombre) => str(nombre) !== "");
+}
+
+const EN_LA_NUBE = Boolean(
+  process.env.VERCEL || process.env.RENDER || process.env.FLY_APP_NAME,
+);
+
+const ES_POSTGRES = /^postgres(ql)?:\/\//i;
+
+/**
+ * Elige la direccion de la base de datos entre todos los nombres posibles.
+ *
+ * No vale con coger la primera que exista: una `DATABASE_URL` vieja apuntando
+ * a un fichero se colaba por delante de la base de datos de verdad que acababa
+ * de conectar el alojamiento, y la aplicacion seguia diciendo que faltaba.
+ * En la nube manda la que sea PostgreSQL, este en la variable que este.
+ */
 function databaseUrl() {
-  return (
-    str("DATABASE_URL") ||
-    str("POSTGRES_PRISMA_URL") ||
-    str("POSTGRES_URL_NON_POOLING") ||
-    str("POSTGRES_URL") ||
-    "file:./dev.db"
-  );
+  const valores = NOMBRES_BASE_DE_DATOS.map((nombre) => str(nombre)).filter(Boolean);
+
+  const postgres = valores.find((valor) => ES_POSTGRES.test(valor));
+  if (postgres) return postgres;
+
+  // En la nube no se cae a SQLite: un fichero no sobrevive, y fingir que hay
+  // base de datos solo sirve para que el fallo llegue mas tarde y peor.
+  if (EN_LA_NUBE) return "";
+  return valores[0] ?? "file:./dev.db";
 }
 
 /**
@@ -60,7 +91,8 @@ function storageDriver() {
 
 // Prisma lee DATABASE_URL del entorno tal cual: se normaliza antes de que lo
 // haga, para aceptar tambien los nombres que inyecta Vercel.
-process.env.DATABASE_URL = databaseUrl();
+const direccionBaseDeDatos = databaseUrl();
+if (direccionBaseDeDatos) process.env.DATABASE_URL = direccionBaseDeDatos;
 
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",

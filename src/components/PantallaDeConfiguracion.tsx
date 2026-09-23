@@ -28,20 +28,46 @@ const PASOS = [
   },
 ];
 
-export function PantallaDeConfiguracion({ motivo }: { motivo?: string }) {
+export function PantallaDeConfiguracion({
+  motivo,
+  tipo = "sin-base",
+  variables = [],
+}: {
+  motivo?: string;
+  tipo?: "sin-base" | "error";
+  variables?: string[];
+}) {
+  // Si las variables estan puestas, la base de datos existe: el problema es
+  // otro, y mandar a crear otra base de datos solo haria perder el tiempo.
+  const hayBase = tipo === "error";
+
   return (
     <div className="mx-auto max-w-2xl px-5 py-14">
-      <span className="chip">Falta un paso</span>
+      <span className="chip">{hayBase ? "Casi" : "Falta un paso"}</span>
       <h1 className="mt-4 text-3xl font-semibold tracking-tight">
-        Ya está publicada. Solo falta la base de datos.
+        {hayBase
+          ? "La base de datos está puesta, pero todavía no responde."
+          : "Ya está publicada. Solo falta la base de datos."}
       </h1>
       <p className="mt-3 text-base leading-relaxed" style={{ color: "var(--text-soft)" }}>
-        Es donde se guardan tu cuenta, tus documentos y tu progreso. Sin ella la
-        aplicación no puede recordar nada. Se crea desde el propio panel de
-        Vercel y no hay que copiar ninguna clave.
+        {hayBase ? (
+          <>
+            Vercel ya ha conectado la base de datos ({variables.join(", ")}), así que
+            no tienes que crear otra. Lo que falta es volver a construir la
+            aplicación para que la use: <strong>Deployments → los tres puntos del
+            último → Redeploy</strong>, y <strong>desmarca «Use existing Build
+            Cache»</strong> si te lo ofrece.
+          </>
+        ) : (
+          <>
+            Es donde se guardan tu cuenta, tus documentos y tu progreso. Sin ella la
+            aplicación no puede recordar nada. Se crea desde el propio panel de
+            Vercel y no hay que copiar ninguna clave.
+          </>
+        )}
       </p>
 
-      <ol className="mt-8 grid gap-3">
+      <ol className={"mt-8 grid gap-3" + (hayBase ? " hidden" : "")}>
         {PASOS.map((paso, indice) => (
           <li key={paso.titulo} className="card flex gap-4 p-5">
             <span
