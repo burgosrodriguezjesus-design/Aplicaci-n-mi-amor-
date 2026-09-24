@@ -481,6 +481,19 @@ body {
   border-color: var(--border);
   color: var(--text-soft);
 }
+/* Recuadros del propio libro: "Recuerda", "Importante" */
+.callout-recuerda {
+  background: var(--success-soft);
+  border-color: color-mix(in srgb, var(--success) 25%, transparent);
+  color: var(--text);
+}
+.callout-formula {
+  background: var(--bg-sunken);
+  border-color: var(--border-strong);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.86rem;
+}
 
 /* Referencia a la página original del PDF */
 .page-ref {

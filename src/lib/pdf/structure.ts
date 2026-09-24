@@ -80,14 +80,68 @@ function isMostlyUppercase(line: string) {
   return upper / letters.length > 0.75;
 }
 
+/** Pie de una figura, foto o gráfico: describe una imagen, no es contenido. */
+const PIE_DE_FIGURA =
+  /^(figura|fig\.|fotograf[ií]a|foto|imagen|ilustraci[oó]n|gr[aá]fico|esquema|mapa|fuente)\s*\d+([.\-]\d+)*\.?(\s|$)/i;
+
+/**
+ * Etiquetas sueltas de un gráfico ("T1 T2 T3 T4", "0 10 20 30", "Ene Feb"):
+ * varias piezas cortas sin ninguna palabra de verdad. Una fórmula ("V = I x R")
+ * no cuenta: lleva signos.
+ */
+function esEtiquetaDeGrafico(linea: string) {
+  if (/[=+×÷<>]/.test(linea)) return false;
+  const piezas = linea.split(/\s+/).filter(Boolean);
+  return piezas.length >= 2 && piezas.every((p) => p.length <= 4) && !piezas.some((p) => /^\p{L}{4,}$/u.test(p));
+}
+
+/**
+ * ¿Parece una palabra? Sirve para descartar lo que queda de basura del
+ * reconocimiento de escaneados: "eITES", "0::", "===".
+ */
+export function pareceTexto(linea: string) {
+  const piezas = linea.split(/\s+/).filter((p) => /[\p{L}\p{N}]/u.test(p));
+  if (piezas.length === 0) return false;
+  const buenas = piezas.filter((pieza) => {
+    const p = pieza.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}%€.]+$/gu, "");
+    if (!p) return false;
+    if (/^[\d.,:%€ºª/-]+$/.test(p)) return true; // números, fechas, porcentajes
+    if (/\p{L}\p{N}|\p{N}\p{L}/u.test(p) && !/^\d+(º|ª|er|os|as)$/i.test(p)) return /^[A-Z]{1,3}\d{1,4}$/.test(p);
+    if (/(.)\1\1/u.test(p.toLowerCase())) return false; // "eee", "000"
+    if (/\p{Ll}\p{Lu}/u.test(p)) return false; // "eITES", "eN"
+    if (p.length === 1) return /^[aeoyuAEOYU]$/.test(p) || /^[A-Z]$/.test(p);
+    return /[aeiouáéíóúüy]/i.test(p) || /^[A-Z]{2,6}$/.test(p); // con vocal, o sigla
+  });
+  return buenas.length / piezas.length >= 0.7;
+}
+
 /** Filtra encabezados/pies de pagina repetidos y numeros de pagina sueltos. */
 function isNoise(line: string) {
   const trimmed = line.trim();
   if (!trimmed) return true;
   if (/^\d{1,4}$/.test(trimmed)) return true;
+  if (/^[-–—]?\s*\d{1,4}\s*[-–—]?$/.test(trimmed)) return true;
   if (/^p[aá]g(ina)?\.?\s*\d+/i.test(trimmed)) return true;
   if (/^[-–—_=·•.\s]+$/.test(trimmed)) return true;
+  if (PIE_DE_FIGURA.test(trimmed)) return true;
+  if (esEtiquetaDeGrafico(trimmed)) return true;
+  if (!pareceTexto(trimmed)) return true;
   return false;
+}
+
+/**
+ * ¿Es la página del índice? Lo es si empieza por "Índice" (o "Sumario",
+ * "Contenidos") o si tiene varias líneas del tipo "Título ....... 12".
+ * El índice no es contenido: si se resume, salen sus títulos como si fueran
+ * apartados (con sus puntos de relleno convertidos en "palabras").
+ */
+export function pareceIndice(texto: string) {
+  const lineas = texto.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lineas.slice(0, 4).some((l) => /^(í|i)ndice(\s+(general|de contenidos))?$|^sumario$|^contenidos?$/i.test(l))) {
+    return true;
+  }
+  const entradas = lineas.filter((l) => /(\.{3,}|…{2,}|\s{3,})\s*\d{1,4}$/.test(l)).length;
+  return entradas >= 4 && entradas >= lineas.length * 0.4;
 }
 
 /**
@@ -163,7 +217,7 @@ export function tagLines(pages: PageText[], context?: StructureContext): TaggedL
 
   for (const page of pages) {
     // El indice no es contenido: si se trocea, se resume su propia lista.
-    if (tocPages.has(page.pageNumber)) continue;
+    if (tocPages.has(page.pageNumber) || pareceIndice(page.text)) continue;
 
     const lines: PageLine[] =
       page.lines && page.lines.length > 0
@@ -194,6 +248,8 @@ export function tagLines(pages: PageText[], context?: StructureContext): TaggedL
       } else if (CHAPTER_RE.test(line) && short && !endsLikeSentence) {
         heading = 1;
         source = "tema";
+        // Cada unidad vuelve a numerar sus apartados desde 1.
+        sequence.clear();
       } else if (!endsLikeSentence || big) {
         const numbered = NUMBERED_RE.exec(line);
         if (
@@ -213,6 +269,8 @@ export function tagLines(pages: PageText[], context?: StructureContext): TaggedL
           source = "tamano";
         } else if (
           isMostlyUppercase(line) &&
+          // Al menos dos palabras de verdad: "T1 T2 T3" no es un título.
+          (line.match(/\p{L}{3,}/gu) ?? []).length >= 2 &&
           line.length <= 90 &&
           !/[.;,]$/.test(line) &&
           (bodyHeight === null || height >= bodyHeight * 0.95)
@@ -260,7 +318,7 @@ function buildRawSections(lines: TaggedLine[]) {
   }[] = [];
 
   let current = {
-    title: "Introduccion",
+    title: "Introducción",
     level: 1,
     startPage: lines[0]?.pageNumber ?? 1,
     endPage: lines[0]?.pageNumber ?? 1,

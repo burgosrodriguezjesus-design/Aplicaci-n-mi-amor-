@@ -17,6 +17,7 @@
 import { api, ApiError } from "./api";
 import { descargarPdf } from "./pdf";
 import { paginaDesdeItems, type TextItem } from "@/lib/pdf/lineas";
+import { textoDesdeBloques, type BloqueOcr } from "@/lib/pdf/ocr-bloques";
 import { guardarPdfLocal, pdfLocal } from "./pdf-local";
 
 const BASE = "/ocr";
@@ -26,8 +27,14 @@ const ANCHO_OBJETIVO = 1650;
 const CONFIANZA_MINIMA = 70;
 const TANDA = 4;
 
-type Lectura = { data: { text: string; confidence: number } };
-type Lector = { recognize: (imagen: Blob) => Promise<Lectura>; terminate: () => Promise<unknown> };
+type Lectura = { data: { text: string; confidence: number; blocks?: BloqueOcr[] | null } };
+type Lector = {
+  recognize: (imagen: Blob, opciones?: object, salida?: object) => Promise<Lectura>;
+  terminate: () => Promise<unknown>;
+};
+/** Se pide la confianza de cada palabra para descartar la basura (ocr-bloques.ts). */
+const SALIDA = { text: true, blocks: true };
+const textoLimpio = (lectura: Lectura) => textoDesdeBloques(lectura.data.blocks) ?? "";
 type Motor = {
   createWorker: (idioma: string, oem: number, opciones: Record<string, unknown>) => Promise<Lector>;
 };
@@ -303,7 +310,7 @@ async function leer(
     const releer = async (imagen: Blob): Promise<Lectura | null> => {
       preciso ??= crearLector("preciso").catch(() => null);
       const lector = await preciso;
-      return lector ? lector.recognize(imagen).catch(() => null) : null;
+      return lector ? lector.recognize(imagen, {}, SALIDA).catch(() => null) : null;
     };
 
     // Cola de páginas dibujadas esperando lector, y lecturas por mandar.
@@ -404,12 +411,12 @@ async function leer(
         let texto = "";
         if (trabajo.imagen) {
           try {
-            let mejor = await lector.recognize(trabajo.imagen);
+            let mejor = await lector.recognize(trabajo.imagen, {}, SALIDA);
             if (mejor.data.confidence < CONFIANZA_MINIMA) {
               const otra = await releer(trabajo.imagen);
               if (otra && otra.data.confidence > mejor.data.confidence) mejor = otra;
             }
-            texto = mejor.data.text ?? "";
+            texto = textoLimpio(mejor);
           } catch {
             texto = "";
           }

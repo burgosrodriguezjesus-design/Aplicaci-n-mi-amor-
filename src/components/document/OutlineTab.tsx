@@ -28,6 +28,25 @@ function pathOf(indexes: number[]) {
   return indexes.join(".");
 }
 
+/**
+ * "Término: explicación" → el término en negrita, como en unos apuntes.
+ * Solo si lo de antes de los dos puntos es corto (un nombre, no una frase).
+ */
+function Etiqueta({ label, kind }: { label: string; kind?: string }) {
+  if (kind === "concept" || kind === "detail") {
+    const corte = label.indexOf(": ");
+    if (corte > 0 && corte <= 60) {
+      return (
+        <>
+          <strong style={{ color: "var(--text)", fontWeight: 600 }}>{label.slice(0, corte + 1)}</strong>
+          {label.slice(corte + 1)}
+        </>
+      );
+    }
+  }
+  return <>{label}</>;
+}
+
 function collectPaths(nodes: OutlineNodeDto[], prefix: number[] = []): string[] {
   const paths: string[] = [];
   nodes.forEach((node, index) => {
@@ -91,15 +110,17 @@ function OutlineNode({
             }}
             className={node.kind === "formula" ? "font-mono" : undefined}
           >
-            {node.label}
+            <Etiqueta label={node.label} kind={node.kind} />
           </span>
           {style.chip ? (
             <span className="chip ml-2 align-middle">{style.chip}</span>
           ) : null}
-          {node.page && onPageClick ? (
+          {/* La página solo en temas y apartados: en cada hoja llenaba el
+              esquema de huecos (y en el móvil, sin ratón, no se veía). */}
+          {node.page && onPageClick && (node.kind === "chapter" || node.kind === "section" || node.kind === "subsection") ? (
             <button
               type="button"
-              className="page-ref ml-2 align-middle opacity-0 transition group-hover:opacity-100 focus:opacity-100"
+              className="page-ref ml-2 align-middle opacity-60 transition group-hover:opacity-100 focus:opacity-100"
               onClick={() => onPageClick(node.page as number)}
               title={`Abrir la página ${node.page} del PDF`}
             >

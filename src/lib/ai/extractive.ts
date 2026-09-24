@@ -1,10 +1,25 @@
 /**
- * Modo sin IA (extractivo).
+ * Modo sin IA: resumen y esquema construidos con el propio texto del PDF.
  *
- * Cuando no hay ANTHROPIC_API_KEY configurada la aplicacion sigue siendo util:
- * construye el resumen y el esquema SELECCIONANDO frases del propio PDF, nunca
- * generando texto nuevo. Es imposible que alucine porque no escribe nada que no
- * estuviera en el documento; a cambio, la redaccion no se simplifica.
+ * Nunca escribe nada que no esté en el documento (no puede "inventar"), pero
+ * tampoco copia párrafos enteros: da al texto la forma de unos buenos apuntes
+ * de estudio, como los de un temario de oposición o de FP.
+ *
+ * Resumen, por apartado:
+ *  - las ideas en viñetas cortas, con las frases que cargan el contenido
+ *    (definiciones, clasificaciones, datos, obligaciones), sin conectores de
+ *    relleno ("Por eso se dice que", "Además,", "Es decir,");
+ *  - el término que se define, en negrita;
+ *  - las clasificaciones como listas, con el nombre de cada tipo en negrita;
+ *  - los recuadros del libro ("Recuerda", "Importante") y las fórmulas,
+ *    destacados;
+ *  - fuera pies de figura, restos de gráficos y líneas de basura.
+ *
+ * Visión general: qué trata cada unidad y un glosario con las definiciones.
+ *
+ * Esquema: se construye a partir del resumen (así sale igual al regenerarlo):
+ * unidad → apartado → subapartado, y debajo de cada uno sus conceptos con
+ * la definición corta, los tipos de cada clasificación, fórmulas y avisos.
  */
 import "server-only";
 import type { Chunk } from "../pdf/structure";
@@ -13,53 +28,53 @@ import type { ChunkAnalysis, OutlineNode, OutlineTree } from "./types";
 
 const PAGE_MARKER = /\[\[pag\. (\d+)\]\]/g;
 
-/** Proporcion de frases que se conservan segun el nivel de detalle. */
-const KEEP_RATIO: Record<SummaryDepth, number> = {
-  RAPIDO: 0.3,
-  NORMAL: 0.5,
-  DETALLADO: 0.72,
-  MUY_DETALLADO: 0.95,
-};
+/* ── Señales del texto ─────────────────────────────────────────────── */
 
 const STOP_WORDS = new Set(
-  ("de la que el en y a los del se las por un para con no una su al lo como mas " +
-    "pero sus le ya o este si porque esta entre cuando muy sin sobre tambien me " +
+  ("de la que el en y a los del se las por un para con no una su al lo como mas más " +
+    "pero sus le ya o este si porque esta entre cuando muy sin sobre tambien también me " +
     "hasta hay donde quien desde todo nos durante todos uno les ni contra otros " +
     "ese eso ante ellos e esto mi antes algunos qué unos yo otro otras otra él " +
     "tanto esa estos mucho quienes nada muchos cual poco ella estar estas algunas " +
-    "algo nosotros cada")
+    "algo nosotros cada puede pueden debe deben tiene tienen hace")
     .split(/\s+/),
 );
 
-const DEFINITION_RE =
-  /\b(se define como|se denomina|se conoce como|consiste en|es el|es la|es un|es una|son los|son las|se llama|entendemos por|definicion)\b/i;
-const FORMULA_RE = /(^|\s)[A-Za-zα-ω][\w₀-₉]*\s*=\s*[^.;]{2,60}/;
-const NUMBER_RE = /\d/;
+/** Verbos que introducen una definición. */
+const DEFINE =
+  "es|son|se define como|se definen como|se denomina|se denominan|consiste en|consisten en|se llama|se llaman|se conoce como|se conocen como|recibe el nombre de|reciben el nombre de|indica|indican|representa|representan";
+const DEFINITION_RE = new RegExp(`\\b(${DEFINE})\\b`, "i");
+const FORMULA_RE = /[\p{L}\p{N})\]]\s*=\s*[\p{L}\p{N}(]/u;
 const IMPORTANT_RE =
-  /\b(importante|fundamental|clave|recuerda|obligatorio|atencion|no confundir|examen|debe|siempre|nunca)\b/i;
-/** Frases que anuncian una clasificacion: son justo lo que se estudia. */
+  /\b(importante|fundamental|clave|obligatori[oa]|atenci[oó]n|no confundir|examen|debe|deben|siempre|nunca|prohibid[oa])\b/i;
 const ENUMERA_RE =
-  /\b(se clasifican|se dividen|se distinguen|tipos de|clases de|consta de|se compone|comprende|los siguientes|las siguientes)\b/i;
-/** Un dato con unidad o porcentaje es contenido examinable, no relleno. */
+  /\b(se clasifican|se dividen|se distinguen|tipos de|clases de|consta de|se compone|comprende|los siguientes|las siguientes|principalmente)\b/i;
 const DATO_RE =
-  /\d+\s*(?:%|€|ºC|°C|m²|m2)|\d+\s*(?:km|cm|mm|kg|g|s|h|min|V|A|W|kW|MW|Hz|Ω|euros?|años?|anos?|dias?|días?|meses)\b/;
-/**
- * Frases que dicen en que se mide algo. No llevan numero, asi que no cuentan
- * como dato, pero "se mide en amperios" es justo lo que se pregunta.
- */
+  /\d+\s*(?:%|€|ºC|°C|m²|m2)|\d+\s*(?:km|cm|mm|kg|g|s|h|min|V|A|W|kW|MW|Hz|Ω|euros?|años?|días?|meses|horas?)\b|\bmodelo\s+\d{3}\b/i;
 const UNIDAD_RE =
-  /\b(se mide en|se miden en|su unidad es|sus unidades son|se expresa en|se expresan en|viene dado en|viene dada en|unidad de medida)\b/i;
-/** Guiones, topos y enumeradores al principio de linea. */
+  /\b(se mide en|se miden en|su unidad es|sus unidades son|se expresa en|se expresan en|unidad de medida)\b/i;
+/** Viñetas, topos y enumeradores al principio de línea. */
 const VINETA_RE =
-  /^\s*(?:[-–—•·▪o*]\s+|\(?[a-z]\)\s+|\(?\d{1,2}\)\s+|\d{1,2}[.)]\s+(?=[a-záéíóúñ]))/;
+  /^\s*(?:[-–—•·▪◦●○■□➢►✓*+]\s+|\(?[a-z]\)\s+|\(?\d{1,2}\)\s+|\d{1,2}[.)]\s+(?=[a-záéíóúñ]))/;
+/** Recuadros del libro: "Recuerda: …", "Importante: …". */
+const AVISO_RE =
+  /^(recuerda|importante|atenci[oó]n|ojo|nota|no olvides|a tener en cuenta|consejo|sab[ií]as que)\s*:\s*/i;
+const PIE_RE =
+  /^(figura|fig\.|fotograf[ií]a|foto|imagen|ilustraci[oó]n|gr[aá]fico|esquema|mapa|tabla|cuadro|fuente)\s*\d+([.\-]\d+)*\.?\s/i;
+/** Conectores que no aportan contenido al principio de una frase. */
+const CONECTOR_RE =
+  /^(?:además|asimismo|así pues|por (?:eso|ello|tanto|lo tanto|consiguiente)|es decir|o sea|en (?:este|ese) sentido|de (?:esta|este|ese|esa) (?:forma|modo|manera)|en (?:resumen|definitiva|conclusi[oó]n)|como (?:hemos visto|se ha visto|ya sabemos|ya se ha dicho)[^,]*|por (?:otro|otra|una) (?:lado|parte)|en primer lugar|en segundo lugar|finalmente|por último)\s*,?\s*(?:se (?:dice|afirma) que\s+|podemos decir que\s+|hay que (?:decir|señalar) que\s+)?/i;
 
-/**
- * Lo que no puede caerse del resumen aunque puntue bajo.
- *
- * Elegir frases por su carga de informacion funciona de media, pero se deja
- * fuera justo lo que luego se pregunta: una definicion corta, una
- * clasificacion, un aviso o un dato con unidades ("se mide en amperios").
- */
+/** "Se utilizan dos métodos", "existen tres tipos": anuncian lo que sigue. */
+const NUMEROS: Record<string, number> = { dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, varios: 3, varias: 3 };
+const ANUNCIO_RE =
+  /\b(dos|tres|cuatro|cinco|seis|varios|varias)\s+(?:grandes\s+|principales\s+)?(?:métodos|tipos|clases|formas|fases|etapas|modelos|sistemas|criterios|grupos|categorías|elementos|funciones|partes|modalidades|procedimientos)\b/i;
+
+/** Frases de procedimiento: "La cuota se obtiene…", "El método FIFO valora…". */
+const PROCEDIMIENTO_RE =
+  /^(?:El|La|Los|Las)\s+([^,;:]{3,50}?)\s+((?:se\s+(?:obtiene|obtienen|calcula|calculan|determina|determinan|mide|miden|utiliza|utilizan|aplica|aplican))|calcula|calculan|valora|valoran|mide|miden|permite|permiten|consiste|consisten|establece|establecen|sirve|sirven)\s+(.+)$/;
+
+/** Frases que por su contenido no pueden faltar en el resumen. */
 function imprescindible(texto: string) {
   return (
     DEFINITION_RE.test(texto) ||
@@ -71,517 +86,720 @@ function imprescindible(texto: string) {
   );
 }
 
-/** Dos frases que dicen lo mismo con otras comas no valen el doble. */
-function clavePorFrase(texto: string) {
-  return texto
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9ñ ]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .split(" ")
-    .slice(0, 14)
-    .join(" ");
+/** Proporción de frases que se conservan según el nivel de detalle. */
+const KEEP_RATIO: Record<SummaryDepth, number> = {
+  RAPIDO: 0.35,
+  NORMAL: 0.55,
+  DETALLADO: 0.75,
+  MUY_DETALLADO: 0.95,
+};
+
+/* ── Utilidades de texto ───────────────────────────────────────────── */
+
+function sinTildes(texto: string) {
+  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
 
-type Sentence = { text: string; page: number; score: number; index: number };
-type Heading = { kind: "heading"; level: number; text: string; index: number };
-type Item = ({ kind: "sentence" } & Sentence) | Heading;
-
-function stripMarkers(text: string) {
-  return text.replace(PAGE_MARKER, "").replace(/\n{3,}/g, "\n\n").trim();
+function mayusculaInicial(texto: string) {
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 
-/**
- * Separa el contenido en titulos y frases, anotando la pagina de cada una.
- * Los titulos se conservan siempre: son los que dan estructura al resumen.
- */
-function toItems(content: string, fallbackPage: number): Item[] {
-  const items: Item[] = [];
-  let page = fallbackPage;
-  let bufferPage = fallbackPage;
-  let buffer: string[] = [];
-  let index = 0;
-
-  for (const rawLine of content.split("\n")) {
-    const markers = [...rawLine.matchAll(PAGE_MARKER)];
-    if (markers.length) {
-      page = Number.parseInt(markers[markers.length - 1][1], 10) || page;
-    }
-    const line = rawLine.replace(PAGE_MARKER, "").trim();
-    if (!line) {
-      flushParagraph();
-      continue;
-    }
-
-    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
-    if (heading) {
-      flushParagraph();
-      items.push({
-        kind: "heading",
-        level: heading[1].length,
-        text: heading[2].trim(),
-        index: index++,
-      });
-      continue;
-    }
-
-    if (buffer.length === 0) bufferPage = page;
-    buffer.push(line);
-  }
-
-  flushParagraph();
-  return items;
-
-  /**
-   * Une las lineas de un mismo parrafo antes de separarlas en frases: en un
-   * PDF una frase suele venir partida en varias lineas, y separarlas romperia
-   * las frases por la mitad.
-   */
-  function flushParagraph() {
-    if (buffer.length === 0) return;
-    const paragraph = buffer.join(" ").replace(/\s{2,}/g, " ").trim();
-    buffer = [];
-    if (!paragraph) return;
-
-    const parts = paragraph
-      .split(/(?<=[.:;!?])\s+(?=[A-ZÁÉÍÓÚÑ0-9¿¡])/)
-      .map((piece) => piece.trim())
-      .filter(Boolean);
-
-    for (const part of parts) {
-      items.push({ kind: "sentence", text: part, page: bufferPage, score: 0, index: index++ });
-    }
-  }
+/** Termina en punto (salvo que ya acabe en signo). */
+function cerrar(texto: string) {
+  const t = texto.trim();
+  return /[.!?:…)]$/.test(t) ? t : `${t}.`;
 }
 
-function tokenize(text: string) {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .split(/[^a-z0-9]+/)
-    .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
+/** Acorta sin partir palabras. */
+function acortar(texto: string, maximo: number) {
+  const t = texto.trim().replace(/\s+/g, " ");
+  if (t.length <= maximo) return t;
+  const corte = t.slice(0, maximo);
+  const espacio = corte.lastIndexOf(" ");
+  return `${corte.slice(0, espacio > maximo * 0.6 ? espacio : maximo).replace(/[,;:\s]+$/, "")}…`;
 }
 
-function scoreSentences(sentences: Sentence[]) {
-  const freq = new Map<string, number>();
-  for (const sentence of sentences) {
-    for (const word of tokenize(sentence.text)) {
-      freq.set(word, (freq.get(word) ?? 0) + 1);
-    }
-  }
-  const max = Math.max(1, ...freq.values());
-
-  for (const sentence of sentences) {
-    const words = tokenize(sentence.text);
-    const density = words.length
-      ? words.reduce((sum, w) => sum + (freq.get(w) ?? 0) / max, 0) / words.length
-      : 0;
-
-    let score = density * 2;
-    if (DEFINITION_RE.test(sentence.text)) score += 1.6;
-    if (FORMULA_RE.test(sentence.text)) score += 1.8;
-    if (IMPORTANT_RE.test(sentence.text)) score += 1.2;
-    if (NUMBER_RE.test(sentence.text)) score += 0.5;
-    if (sentence.index < 2) score += 0.8; // las primeras frases suelen introducir
-    if (sentence.text.length < 25) score -= 0.8;
-    if (sentence.text.length > 400) score -= 0.3;
-
-    sentence.score = score;
-  }
-  return sentences;
+/** Primera cláusula de una explicación: lo que cabe en un esquema. */
+function nucleo(texto: string, maximo = 90) {
+  const limpio = texto.replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+  const primera = limpio.split(/(?<=[.;])\s|,\s(?:que|lo que|es decir|ya que|porque|aunque|mientras)\b/)[0];
+  return acortar(primera.replace(/[.;,:]+$/, ""), maximo);
 }
 
-/** Palabras demasiado genericas para ser un "concepto clave". */
-const GENERIC_TERMS = new Set([
-  "unidad",
-  "unidades",
-  "representa",
-  "letra",
-  "puntos",
-  "punto",
-  "tiempo",
-  "valores",
-  "valor",
-  "ejemplo",
-  "ejemplos",
-  "sistema",
-  "forma",
-  "manera",
-  "parte",
-  "partes",
-  "caso",
-  "casos",
-  "tipo",
-  "tipos",
-  "numero",
-  "nombre",
-  "figura",
-  "tabla",
-  "capitulo",
-  "tema",
-  "apartado",
-]);
+/** ¿Es un trozo de texto legible? (descarta restos del escaneo) */
+function legible(texto: string) {
+  const piezas = texto.split(/\s+/).filter((p) => /[\p{L}\p{N}]/u.test(p));
+  if (piezas.length === 0) return false;
+  const buenas = piezas.filter((pieza) => {
+    const p = pieza.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}%€]+$/gu, "");
+    if (!p) return false;
+    if (/^[\d.,:%€ºª/-]+$/.test(p)) return true;
+    if (/(.)\1\1/u.test(p.toLowerCase())) return false;
+    if (/\p{Ll}\p{Lu}/u.test(p)) return false;
+    if (p.length === 1) return /^[aeoyuAEOYU]$/.test(p) || /^[A-Z]$/.test(p);
+    return /[aeiouáéíóúüy]/i.test(p) || /^[A-Z]{2,6}$/.test(p);
+  });
+  return buenas.length / piezas.length >= 0.75;
+}
 
-/** Limpia la numeracion de un titulo: "1.2 Intensidad" -> "Intensidad". */
-function cleanHeading(title: string) {
-  return title
-    .replace(/^(tema|capitulo|capítulo|unidad|bloque|parte)\s*\d+\s*[-–—.:]?\s*/i, "")
+/** Quita la numeración de un título: "2.1. Tipos" → "Tipos". */
+function sinNumeracion(titulo: string) {
+  return titulo
+    .replace(/^(tema|cap[ií]tulo|unidad|bloque|parte|lecci[oó]n)\s*[\divxlc]+\s*[-–—.:]?\s*/i, "")
     .replace(/^\d+(\.\d+)*[.)]?\s*/, "")
     .trim();
 }
 
-/**
- * Conceptos clave: primero los titulos del propio documento (la mejor señal
- * posible, porque los ha escrito el autor) y despues los terminos que aparecen
- * justo antes de una definicion.
- */
-function extractKeyConcepts(
-  sentences: Sentence[],
-  headings: Heading[],
-  limit = 8,
-) {
-  const scored = new Map<string, number>();
-
-  const add = (raw: string, weight: number) => {
-    const term = raw.trim().replace(/\s{2,}/g, " ");
-    if (term.length < 5 || term.length > 60) return;
-    const words = term.toLowerCase().split(/\s+/);
-    if (STOP_WORDS.has(words[0]) || GENERIC_TERMS.has(words[0])) return;
-    if (words.length === 1 && GENERIC_TERMS.has(words[0])) return;
-    const key = term.toLowerCase();
-    scored.set(key, (scored.get(key) ?? 0) + weight);
-  };
-
-  for (const heading of headings) {
-    const clean = cleanHeading(heading.text);
-    if (clean) add(clean, 5);
-  }
-
-  for (const sentence of sentences) {
-    // "La tension electrica, tambien llamada..., es el trabajo..."
-    const definition =
-      /^(?:la|el|los|las|un|una)\s+([a-záéíóúñ]{4,}(?:\s+[a-záéíóúñ]{3,}){0,2})\s+(?:es|son|se define|se denomina|se conoce|consiste)/i.exec(
-        sentence.text,
-      );
-    if (definition) add(definition[1], 3);
-
-    // "se denomina X", "se conoce como X"
-    const named = /\b(?:se denomina|se conoce como|se llama)\s+([a-záéíóúñ]{4,}(?:\s+[a-záéíóúñ]{3,}){0,2})/i.exec(
-      sentence.text,
-    );
-    if (named) add(named[1], 2);
-  }
-
-  return [...scored.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit)
-    .map(([term]) => term.charAt(0).toUpperCase() + term.slice(1));
-}
-
-function extractFormulas(sentences: Sentence[]) {
-  const seen = new Set<string>();
-  const formulas: { text: string; page: number }[] = [];
-  for (const sentence of sentences) {
-    const match = FORMULA_RE.exec(sentence.text);
-    if (!match) continue;
-    const formula = shortFormula(match[0]);
-    if (formula.length > 90 || seen.has(formula)) continue;
-    seen.add(formula);
-    formulas.push({ text: formula, page: sentence.page });
-  }
-  return formulas;
-}
-
-/** Recorta una formula a su expresion, sin la explicacion que la acompana. */
-function shortFormula(formula: string) {
-  const clean = formula
-    .split(/,|\bdonde\b|\bsiendo\b/i)[0]
-    // Corta cuando detras de la expresion empieza una frase normal.
-    .split(/\s(?=[A-ZÁÉÍÓÚÑ][a-záéíóúñ])/)[0]
+/** Título limpio: sin puntos de relleno ni número de página del índice. */
+function limpiarTitulo(titulo: string) {
+  return titulo
+    .replace(PAGE_MARKER, "")
+    .replace(/\s*(\.{2,}|…+|[-_=·]{3,}).*$/, "")
+    .replace(/\s+\d{1,4}$/, "")
+    .replace(/\s+/g, " ")
     .trim();
-  return clean.length > 60 ? `${clean.slice(0, 57)}…` : clean;
 }
 
-function pageLabel(pages: number[]) {
-  if (pages.length === 0) return "";
-  const min = Math.min(...pages);
-  const max = Math.max(...pages);
-  return min === max ? ` (pag. ${min})` : ` (pags. ${min}-${max})`;
-}
+/* ── Lectura del fragmento en bloques ──────────────────────────────── */
 
-/** Resumen extractivo de un fragmento. */
-export function extractiveChunkSummary(
-  chunk: Chunk,
-  depth: SummaryDepth,
-): ChunkAnalysis {
-  const items = toItems(chunk.content, chunk.startPage);
-  const sentences = scoreSentences(
-    items.filter((item): item is { kind: "sentence" } & Sentence => item.kind === "sentence"),
-  );
+type Bloque =
+  | { tipo: "titulo"; nivel: number; texto: string; pagina: number }
+  | { tipo: "parrafo"; texto: string; pagina: number }
+  | { tipo: "lista"; intro: string | null; items: string[]; pagina: number }
+  | { tipo: "aviso"; texto: string; pagina: number }
+  | { tipo: "formula"; texto: string; pagina: number };
 
-  const ratio = KEEP_RATIO[depth] ?? KEEP_RATIO.DETALLADO;
-  const keep = Math.max(3, Math.round(sentences.length * ratio));
+function leerBloques(contenido: string, paginaInicial: number): Bloque[] {
+  const bloques: Bloque[] = [];
+  let pagina = paginaInicial;
+  let parrafo: string[] = [];
+  let paginaParrafo = pagina;
+  let lista: { items: string[]; pagina: number } | null = null;
+  let blancoEnLista = false;
 
-  const kept = new Set(
-    [...sentences]
-      .sort((a, b) => b.score - a.score)
-      .slice(0, keep)
-      .map((sentence) => sentence.index),
-  );
-
-  // Definiciones, formulas, clasificaciones, avisos y datos con unidades
-  // entran siempre, puntuen lo que puntuen.
-  for (const sentence of sentences) {
-    if (imprescindible(sentence.text)) kept.add(sentence.index);
-  }
-
-  // Y fuera repeticiones: un temario repite la misma frase en cada apartado.
-  const vistas = new Set<string>();
-  for (const sentence of sentences) {
-    if (!kept.has(sentence.index)) continue;
-    const clave = clavePorFrase(sentence.text);
-    if (clave.length < 12) continue;
-    if (vistas.has(clave)) kept.delete(sentence.index);
-    else vistas.add(clave);
-  }
-
-  const selected = sentences.filter((sentence) => kept.has(sentence.index));
-  const pages = [...new Set(selected.map((sentence) => sentence.page))].sort((a, b) => a - b);
-  const headings = items.filter((item): item is Heading => item.kind === "heading");
-  const concepts = extractKeyConcepts(selected, headings);
-  const formulas = extractFormulas(sentences);
-
-  const title = stripMarkers(chunk.title) || "Apartado";
-  const body: string[] = [`### ${title}${pageLabel(pages)}`, ""];
-
-  // Se recorren titulos y frases en su orden original.
-  let currentPage = -1;
-  let paragraph: string[] = [];
-  const flush = () => {
-    if (paragraph.length) {
-      body.push(paragraph.join(" "));
-      body.push("");
-      paragraph = [];
-    }
-  };
-
-  for (const item of items) {
-    if (item.kind === "heading") {
-      flush();
-      currentPage = -1;
-      body.push(`#### ${item.text}`, "");
-      continue;
-    }
-    if (!kept.has(item.index)) continue;
-
-    if (item.page !== currentPage) {
-      flush();
-      currentPage = item.page;
-    }
-    // Una lista es una lista: deshecha en prosa se pierde la enumeracion,
-    // que es justo lo que se memoriza.
-    if (VINETA_RE.test(item.text)) {
-      flush();
-      const elemento = item.text.replace(VINETA_RE, "").trim();
-      body.push(`- ${imprescindible(elemento) ? `**${elemento}**` : elemento}`);
-      continue;
-    }
-
-    const highlighted = IMPORTANT_RE.test(item.text) ? `**${item.text}**` : item.text;
-    paragraph.push(highlighted);
-    if (paragraph.length >= 4) flush();
-  }
-  flush();
-
-  if (formulas.length) {
-    body.push("**Formulas de este apartado**", "");
-    for (const formula of formulas) body.push(`- \`${formula.text}\``);
-    body.push("");
-  }
-
-  if (concepts.length) {
-    body.push("**Conceptos clave**", "");
-    body.push(concepts.map((c) => `**${c}**`).join(" · "));
-    body.push("");
-  }
-
-  const examHighlights = selected
-    .filter((s) => IMPORTANT_RE.test(s.text))
-    .slice(0, 3)
-    .map((s) => s.text);
-
-  if (examHighlights.length) {
-    // El propio texto ya suele empezar por "IMPORTANTE PARA EL EXAMEN:".
-    const highlight = examHighlights[0]
-      .replace(/^\s*(importante|atencion|atención|ojo)[^:]{0,40}:\s*/i, "")
+  const cerrarParrafo = () => {
+    if (parrafo.length === 0) return;
+    const texto = parrafo
+      .join(" ")
+      // "conoci- miento" partido entre líneas de un texto con extracción.
+      .replace(/(\p{L})- (\p{Ll})/gu, "$1$2")
+      .replace(/\s{2,}/g, " ")
       .trim();
-    body.push(`> [!examen] ${highlight}`, "");
+    parrafo = [];
+    if (texto) bloques.push({ tipo: "parrafo", texto, pagina: paginaParrafo });
+  };
+  const cerrarLista = () => {
+    if (!lista) return;
+    if (lista.items.length) bloques.push({ tipo: "lista", intro: null, items: lista.items, pagina: lista.pagina });
+    lista = null;
+  };
+
+  for (const bruta of contenido.split("\n")) {
+    const marcas = [...bruta.matchAll(PAGE_MARKER)];
+    if (marcas.length) pagina = Number.parseInt(marcas[marcas.length - 1][1], 10) || pagina;
+    const linea = bruta.replace(PAGE_MARKER, "").trim();
+
+    if (!linea) {
+      cerrarParrafo();
+      // Una lista con líneas en blanco entre viñetas sigue siendo una lista.
+      if (lista) blancoEnLista = true;
+      continue;
+    }
+
+    const titulo = /^(#{1,6})\s+(.*)$/.exec(linea);
+    if (titulo) {
+      cerrarParrafo();
+      cerrarLista();
+      const texto = limpiarTitulo(titulo[2]);
+      if (texto && legible(texto)) {
+        bloques.push({ tipo: "titulo", nivel: titulo[1].length, texto, pagina });
+      }
+      continue;
+    }
+
+    if (VINETA_RE.test(linea)) {
+      cerrarParrafo();
+      if (!lista) lista = { items: [], pagina };
+      lista.items.push(linea.replace(VINETA_RE, "").trim());
+      blancoEnLista = false;
+      continue;
+    }
+
+    if (lista) {
+      // Continuación de la viñeta anterior (una viñeta larga ocupa varias líneas).
+      if (!blancoEnLista && /^\p{Ll}/u.test(linea) && lista.items.length) {
+        lista.items[lista.items.length - 1] += ` ${linea}`;
+        continue;
+      }
+      cerrarLista();
+      blancoEnLista = false;
+    }
+
+    // Un recuadro ("Recuerda: …") empieza siempre su propio párrafo.
+    if (AVISO_RE.test(linea)) cerrarParrafo();
+    if (parrafo.length === 0) paginaParrafo = pagina;
+    parrafo.push(linea);
+  }
+  cerrarParrafo();
+  cerrarLista();
+
+  // Un párrafo que no termina (sin punto) y sigue en minúscula es el mismo:
+  // el escaneo lo partió (p. ej. la última línea de un recuadro).
+  for (let i = bloques.length - 2; i >= 0; i--) {
+    const a = bloques[i];
+    const b = bloques[i + 1];
+    if (a.tipo === "parrafo" && b.tipo === "parrafo" && !/[.:;!?]$/.test(a.texto) && /^\p{Ll}/u.test(b.texto)) {
+      a.texto = `${a.texto} ${b.texto}`;
+      bloques.splice(i + 1, 1);
+    }
   }
 
+  // Segunda pasada: avisos, fórmulas, pies de figura, basura, y la frase
+  // que introduce una lista ("se clasifican en:") unida a su lista.
+  const salida: Bloque[] = [];
+  for (let i = 0; i < bloques.length; i++) {
+    const bloque = bloques[i];
+    if (bloque.tipo === "parrafo") {
+      const texto = bloque.texto;
+      if (PIE_RE.test(texto) && texto.length < 160) continue;
+      if (!legible(texto)) continue;
+      if (AVISO_RE.test(texto)) {
+        salida.push({ tipo: "aviso", texto: texto.replace(AVISO_RE, "").trim(), pagina: bloque.pagina });
+        continue;
+      }
+      const siguiente = bloques[i + 1];
+      if (siguiente?.tipo === "lista" && /:\s*$/.test(texto)) {
+        const frases = partirFrases(texto);
+        const intro = frases.pop() ?? texto;
+        if (frases.length) salida.push({ tipo: "parrafo", texto: frases.join(" "), pagina: bloque.pagina });
+        salida.push({ ...siguiente, intro });
+        i++;
+        continue;
+      }
+      if (FORMULA_RE.test(texto) && texto.split(/\s+/).length <= 14) {
+        salida.push({ tipo: "formula", texto, pagina: bloque.pagina });
+        continue;
+      }
+      salida.push(bloque);
+    } else if (bloque.tipo === "lista") {
+      const items = bloque.items.filter((item) => legible(item));
+      if (items.length) salida.push({ ...bloque, items });
+    } else {
+      salida.push(bloque);
+    }
+  }
+  return salida;
+}
+
+/** Separa un párrafo en frases sin romper abreviaturas ni numeraciones. */
+function partirFrases(texto: string): string[] {
+  return texto
+    .replace(/\b(etc|p\.\s?ej|art|arts|núm|pág|págs|aprox|Sr|Sra|Dr|Dra|Ud|Uds)\./gi, "$1§")
+    .split(/(?<=[.!?;])\s+(?=[¿¡"«(]?[A-ZÁÉÍÓÚÑ0-9])/)
+    .map((f) => f.replace(/§/g, ".").trim())
+    .filter(Boolean);
+}
+
+/* ── Frases: puntuación, selección y pulido ────────────────────────── */
+
+type Frase = { texto: string; parrafo: number; orden: number; nota: number };
+
+function palabras(texto: string) {
+  return sinTildes(texto.toLowerCase())
+    .split(/[^a-z0-9ñ]+/)
+    .filter((w) => w.length > 3 && !STOP_WORDS.has(w));
+}
+
+function puntuar(frases: Frase[]) {
+  const frecuencia = new Map<string, number>();
+  for (const f of frases) for (const w of palabras(f.texto)) frecuencia.set(w, (frecuencia.get(w) ?? 0) + 1);
+  const maximo = Math.max(1, ...frecuencia.values());
+  const primeras = new Set<number>();
+  for (const f of frases) {
+    const ws = palabras(f.texto);
+    const densidad = ws.length ? ws.reduce((s, w) => s + (frecuencia.get(w) ?? 0) / maximo, 0) / ws.length : 0;
+    let nota = densidad * 2;
+    if (DEFINITION_RE.test(f.texto)) nota += 1.6;
+    if (FORMULA_RE.test(f.texto)) nota += 1.6;
+    if (IMPORTANT_RE.test(f.texto)) nota += 1.1;
+    if (ENUMERA_RE.test(f.texto)) nota += 1;
+    if (DATO_RE.test(f.texto)) nota += 0.8;
+    // La primera frase de un párrafo suele ser la que lo resume.
+    if (!primeras.has(f.parrafo)) {
+      nota += 0.9;
+      primeras.add(f.parrafo);
+    }
+    if (/\b(por ejemplo|p\. ?ej\.|imaginemos|supongamos)\b/i.test(f.texto)) nota -= 0.9;
+    if (f.texto.length < 30) nota -= 0.8;
+    if (f.texto.length > 320) nota -= 0.4;
+    f.nota = nota;
+  }
+}
+
+/** Quita el relleno de una frase sin cambiar sus palabras. */
+function pulir(texto: string, depth: SummaryDepth) {
+  let t = texto.trim().replace(CONECTOR_RE, "");
+  if (depth === "RAPIDO" || depth === "NORMAL") {
+    // Los ejemplos se quedan fuera en un resumen corto.
+    t = t.replace(/,?\s*(?:como por ejemplo|por ejemplo|p\. ?ej\.)[^.;]*/i, "");
+  }
+  t = t.replace(/\s+([,.;:])/g, "$1").replace(/\s{2,}/g, " ").trim();
+  return cerrar(mayusculaInicial(t));
+}
+
+/** Pone en negrita el término que la frase define. */
+function resaltarDefinicion(frase: string): { texto: string; termino: string | null; definicion: string | null } {
+  // "El impuesto sobre el valor añadido (IVA) es un tributo…"
+  const sujeto = new RegExp(
+    `^((?:el|la|los|las|un|una)\\s+)?([^,.;:]{2,80}?)\\s+(${DEFINE})\\s+(.+)$`,
+    "i",
+  ).exec(frase);
+  if (sujeto) {
+    const termino = sujeto[2].trim();
+    const nPalabras = termino.split(/\s+/).length;
+    const pareceSujeto =
+      nPalabras <= 9 &&
+      !/\b(que|cuando|si|porque|donde|como|esto|esta|este|ello|lo)\b/i.test(termino) &&
+      !/^(se|no|ya|también|además)\b/i.test(termino);
+    if (pareceSujeto) {
+      const articulo = sujeto[1] ?? "";
+      const verbo = sujeto[3];
+      const texto = articulo
+        ? `${mayusculaInicial(articulo)}**${termino}** ${verbo} ${sujeto[4]}`
+        : `**${mayusculaInicial(termino)}** ${verbo} ${sujeto[4]}`;
+      const directo = /^(es|son)$/i.test(verbo);
+      return { texto, termino, definicion: directo ? sujeto[4] : `${verbo} ${sujeto[4]}` };
+    }
+  }
+  // "Se denomina indirecto porque…"
+  const nombrado = /\b(se denomina|se denominan|se llama|se llaman|se conoce como|recibe el nombre de)\s+([^,.;]{2,45}?)(?=\s+(?:porque|por|a|al|cuando|si|ya)\b|[,.;]|$)/i.exec(frase);
+  if (nombrado) {
+    const termino = nombrado[2].trim();
+    const resto = frase.slice((nombrado.index ?? 0) + nombrado[0].length).replace(/^\s*(porque|ya que|por)\s+/i, "");
+    return {
+      texto: frase.replace(nombrado[0], `${nombrado[1]} **${termino}**`),
+      termino,
+      definicion: resto.length > 8 ? resto : null,
+    };
+  }
+  return { texto: frase, termino: null, definicion: null };
+}
+
+/** Viñeta de una lista: "Mercaderías: bienes…" → "**Mercaderías:** bienes…". */
+function itemDeLista(item: string): { texto: string; etiqueta: string | null; detalle: string } {
+  const t = cerrar(mayusculaInicial(item.trim()));
+  const dosPuntos = /^([^:]{2,60}):\s+(.+)$/.exec(t);
+  if (dosPuntos && dosPuntos[1].split(/\s+/).length <= 7) {
+    return { texto: `**${dosPuntos[1]}:** ${dosPuntos[2]}`, etiqueta: dosPuntos[1], detalle: dosPuntos[2] };
+  }
+  // "Tipo general del 21 %, que se aplica a…"
+  const coma = /^([^,]{3,60}),\s+((?:que|para|en|con|cuando|si|donde)\b.+)$/.exec(t);
+  if (coma && coma[1].split(/\s+/).length <= 7) {
+    return { texto: `**${coma[1]}**, ${coma[2]}`, etiqueta: coma[1], detalle: coma[2] };
+  }
+  return { texto: t, etiqueta: null, detalle: t };
+}
+
+function formula(texto: string) {
+  return texto
+    .replace(AVISO_RE, "")
+    .replace(/\s+x\s+/g, " × ")
+    .replace(/[.;]\s*$/, "")
+    .trim();
+}
+
+/* ── Resumen de un fragmento ───────────────────────────────────────── */
+
+type Definicion = { termino: string; definicion: string };
+
+export function extractiveChunkSummary(chunk: Chunk, depth: SummaryDepth): ChunkAnalysis & {
+  definiciones?: Definicion[];
+} {
+  const bloques = leerBloques(chunk.content, chunk.startPage);
+
+  // Las frases de todos los párrafos, para elegir las que se quedan.
+  const frases: Frase[] = [];
+  bloques.forEach((bloque, i) => {
+    if (bloque.tipo !== "parrafo") return;
+    for (const texto of partirFrases(bloque.texto)) {
+      if (legible(texto)) frases.push({ texto, parrafo: i, orden: frases.length, nota: 0 });
+    }
+  });
+  puntuar(frases);
+  const ratio = KEEP_RATIO[depth] ?? KEEP_RATIO.DETALLADO;
+  const cupo = Math.max(2, Math.round(frases.length * ratio));
+  const elegidas = new Set(
+    [...frases].sort((a, b) => b.nota - a.nota).slice(0, cupo).map((f) => f.orden),
+  );
+  for (const f of frases) if (imprescindible(f.texto)) elegidas.add(f.orden);
+  // Coherencia: si una frase anuncia "dos métodos" o "tres tipos", las que
+  // los explican (las siguientes del mismo párrafo) no pueden faltar.
+  for (const f of frases) {
+    if (!elegidas.has(f.orden)) continue;
+    const anuncio = ANUNCIO_RE.exec(f.texto);
+    if (!anuncio) continue;
+    const cuantos = Math.min(6, NUMEROS[anuncio[1].toLowerCase()] ?? 3);
+    for (let k = 1; k <= cuantos; k++) {
+      const siguiente = frases[f.orden + k];
+      if (!siguiente || siguiente.parrafo !== f.parrafo) break;
+      elegidas.add(siguiente.orden);
+    }
+  }
+  // Sin repeticiones: un temario repite la misma idea con otras palabras.
+  const vistas = new Set<string>();
+  for (const f of frases) {
+    if (!elegidas.has(f.orden)) continue;
+    const clave = palabras(f.texto).slice(0, 10).join(" ");
+    if (clave.length > 12 && vistas.has(clave)) elegidas.delete(f.orden);
+    vistas.add(clave);
+  }
+
+  const titulo = limpiarTitulo(chunk.title.split(" · ").pop() ?? chunk.title) || "Apartado";
+  // Mismas marcas que usa el troceado: unidad "##", apartado "###"...
+  const nivelPropio = Math.min(5, Math.max(2, chunk.level + 1));
+  const md: string[] = [];
+  const conceptos: string[] = [];
+  const definiciones: Definicion[] = [];
+  const formulas: { text: string; page: number }[] = [];
+  const avisos: string[] = [];
+  const paginas = new Set<number>();
+  let tituloPuesto = false;
+
+  const ponerTitulo = () => {
+    if (tituloPuesto) return;
+    md.push(`${"#".repeat(nivelPropio)} ${titulo}`, "");
+    tituloPuesto = true;
+  };
+
+  bloques.forEach((bloque, i) => {
+    if (bloque.tipo === "titulo") {
+      if (sinTildes(bloque.texto.toLowerCase()) === sinTildes(titulo.toLowerCase())) {
+        ponerTitulo();
+        return;
+      }
+      // Los títulos del principio (la unidad, el apartado padre) van antes
+      // que el del propio fragmento; los de dentro, después. Cada uno con su
+      // nivel, que es el que marca el troceado.
+      if (!tituloPuesto && bloque.nivel < nivelPropio) {
+        md.push(`${"#".repeat(Math.max(2, bloque.nivel))} ${bloque.texto}`, "");
+        return;
+      }
+      ponerTitulo();
+      md.push(`${"#".repeat(Math.min(6, Math.max(nivelPropio + 1, bloque.nivel)))} ${bloque.texto}`, "");
+      return;
+    }
+    ponerTitulo();
+    paginas.add(bloque.pagina);
+
+    if (bloque.tipo === "parrafo") {
+      const deEste = frases.filter(
+        (f) => f.parrafo === i && (elegidas.has(f.orden) || AVISO_RE.test(f.texto)),
+      );
+      for (const f of deEste) {
+        if (AVISO_RE.test(f.texto)) {
+          const aviso = cerrar(mayusculaInicial(f.texto.replace(AVISO_RE, "")));
+          avisos.push(aviso);
+          md.push("", `> [!recuerda] ${resaltarDefinicion(aviso).texto}`, "");
+          continue;
+        }
+        const pulida = pulir(f.texto, depth);
+        const { texto, termino, definicion } = resaltarDefinicion(pulida);
+        if (termino) {
+          const limpio = mayusculaInicial(termino.replace(/\s*\(([^)]+)\)/, " ($1)").trim());
+          if (!conceptos.includes(limpio)) conceptos.push(limpio);
+          if (definicion) definiciones.push({ termino: limpio, definicion: nucleo(definicion, 140) });
+        }
+        if (FORMULA_RE.test(f.texto) && f.texto.split(/\s+/).length <= 16) {
+          formulas.push({ text: formula(f.texto), page: bloque.pagina });
+        }
+        md.push(`- ${texto}`);
+      }
+      if (deEste.length) md.push("");
+      return;
+    }
+
+    if (bloque.tipo === "lista") {
+      if (bloque.intro) md.push(pulir(bloque.intro, "DETALLADO"), "");
+      for (const item of bloque.items) {
+        const { texto, etiqueta } = itemDeLista(item);
+        if (etiqueta && !conceptos.includes(etiqueta)) conceptos.push(etiqueta);
+        md.push(`- ${texto}`);
+      }
+      md.push("");
+      return;
+    }
+
+    if (bloque.tipo === "aviso") {
+      const texto = cerrar(mayusculaInicial(bloque.texto));
+      if (FORMULA_RE.test(texto)) {
+        formulas.push({ text: formula(texto), page: bloque.pagina });
+        md.push(`> [!formula] ${formula(texto)}`, "");
+      } else {
+        avisos.push(texto);
+        md.push(`> [!recuerda] ${resaltarDefinicion(texto).texto}`, "");
+      }
+      return;
+    }
+
+    if (bloque.tipo === "formula") {
+      formulas.push({ text: formula(bloque.texto), page: bloque.pagina });
+      md.push(`> [!formula] ${formula(bloque.texto)}`, "");
+    }
+  });
+  ponerTitulo();
+
+  const paginasOrdenadas = [...paginas].sort((a, b) => a - b);
   return {
-    title,
-    markdown: body.join("\n").trim(),
-    keyConcepts: concepts,
-    sourcePages: pages.length ? pages : [chunk.startPage],
-    formulas: formulas.map((formula) => formula.text),
+    title: titulo,
+    markdown: md.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+    keyConcepts: conceptos.slice(0, 8),
+    sourcePages: paginasOrdenadas.length ? paginasOrdenadas : [chunk.startPage],
+    formulas: formulas.map((f) => f.text),
     formulaRefs: formulas,
-    examHighlights,
+    examHighlights: avisos.slice(0, 3),
+    definiciones,
   };
 }
 
-/** Introduccion global del material, tambien extractiva. */
+/* ── Visión general ────────────────────────────────────────────────── */
+
 export function extractiveSynthesis(
   documentTitle: string,
-  analyses: ChunkAnalysis[],
+  analyses: (ChunkAnalysis & { definiciones?: Definicion[] })[],
   pageCount: number,
 ): string {
-  const concepts = [...new Set(analyses.flatMap((a) => a.keyConcepts))].slice(0, 12);
-  const lines = [
-    "## Vision general",
-    "",
-    `Este material procede del documento **${documentTitle}** (${pageCount} ${
-      pageCount === 1 ? "pagina" : "paginas"
-    }) y se ha organizado en ${analyses.length} ${
-      analyses.length === 1 ? "apartado" : "apartados"
-    }.`,
-    "",
-    "> [!aclaracion] Resumen generado en modo extractivo: el texto procede literalmente del PDF, seleccionando las frases con mayor carga de informacion. Configura una clave de IA para obtener explicaciones reescritas y adaptadas a tu nivel.",
-    "",
-    "## Como estudiar este tema",
-    "",
-  ];
-
-  analyses.slice(0, 8).forEach((analysis, index) => {
-    lines.push(
-      `${index + 1}. **${analysis.title}**${pageLabel(analysis.sourcePages)}`,
-    );
-  });
-  lines.push("");
-
-  if (concepts.length) {
-    lines.push("## Conceptos imprescindibles", "");
-    for (const concept of concepts) lines.push(`- **${concept}**`);
-    lines.push("");
+  // Unidades (títulos "## ") con sus apartados, sacados del propio resumen.
+  const unidades: { titulo: string; apartados: string[] }[] = [];
+  for (const analysis of analyses) {
+    for (const linea of analysis.markdown.split("\n")) {
+      const t = /^(#{2,4})\s+(.*)$/.exec(linea);
+      if (!t) continue;
+      if (t[1] === "##") unidades.push({ titulo: t[2], apartados: [] });
+      else if (t[1] === "###") {
+        if (unidades.length === 0) unidades.push({ titulo: documentTitle, apartados: [] });
+        const apartado = sinNumeracion(t[2]);
+        const lista = unidades[unidades.length - 1].apartados;
+        if (apartado && !lista.includes(apartado)) lista.push(apartado);
+      }
+    }
   }
 
-  return lines.join("\n").trim();
+  const lineas = ["## Visión general", ""];
+  const nApartados = unidades.reduce((s, u) => s + u.apartados.length, 0) || analyses.length;
+  lineas.push(
+    `Resumen de **${documentTitle}** (${pageCount} ${pageCount === 1 ? "página" : "páginas"}): ${
+      unidades.length > 1 ? `${unidades.length} unidades y ` : ""
+    }${nApartados} ${nApartados === 1 ? "apartado" : "apartados"}.`,
+    "",
+  );
+
+  if (unidades.length) {
+    lineas.push("### Qué vas a estudiar", "");
+    for (const unidad of unidades) {
+      const temas = unidad.apartados.map((a) => a.charAt(0).toLowerCase() + a.slice(1));
+      lineas.push(`- **${unidad.titulo}**${temas.length ? `: ${temas.join("; ")}.` : ""}`);
+    }
+    lineas.push("");
+  }
+
+  // Glosario: las definiciones del propio texto, en una línea cada una.
+  const vistas = new Set<string>();
+  const glosario = analyses
+    .flatMap((a) => a.definiciones ?? [])
+    .filter((d) => {
+      const clave = sinTildes(d.termino.toLowerCase());
+      if (vistas.has(clave) || d.definicion.length < 8) return false;
+      vistas.add(clave);
+      // La sigla ya definida con su nombre completo ("… (IVA)") no se repite.
+      const sigla = /\(([A-ZÁÉÍÓÚÑ]{2,8})\)/.exec(d.termino)?.[1];
+      if (sigla) vistas.add(sinTildes(sigla.toLowerCase()));
+      return true;
+    })
+    .slice(0, 16);
+  if (glosario.length) {
+    lineas.push("### Conceptos imprescindibles", "");
+    for (const d of glosario) lineas.push(`- **${d.termino}:** ${cerrar(d.definicion)}`);
+    lineas.push("");
+  }
+
+  const formulas = [...new Set(analyses.flatMap((a) => a.formulas))].slice(0, 10);
+  if (formulas.length) {
+    lineas.push("### Fórmulas", "");
+    for (const f of formulas) lineas.push(`- ${f}`);
+    lineas.push("");
+  }
+
+  return lineas.join("\n").trim();
+}
+
+/* ── Esquema ───────────────────────────────────────────────────────── */
+
+const MAX_HIJOS = 10;
+
+/** Esquema a partir del resumen ya hecho (mismo resultado al regenerarlo). */
+function esquemaDesdeResumen(documentTitle: string, analyses: ChunkAnalysis[]): OutlineTree | null {
+  const raiz: OutlineNode[] = [];
+  const pila: { nivel: number; nodo: OutlineNode }[] = [];
+  const colgar = (hijo: OutlineNode) => {
+    const padre = pila[pila.length - 1]?.nodo;
+    if (!padre) {
+      raiz.push(hijo);
+      return;
+    }
+    padre.children = padre.children ?? [];
+    if (padre.children.length < MAX_HIJOS) padre.children.push(hijo);
+  };
+
+  for (const analysis of analyses) {
+    const pagina = analysis.sourcePages[0];
+    const lineas = analysis.markdown.split("\n");
+    let grupo: OutlineNode | null = null;
+
+    for (let i = 0; i < lineas.length; i++) {
+      const linea = lineas[i].trim();
+      if (!linea) {
+        grupo = null;
+        continue;
+      }
+      const titulo = /^(#{2,6})\s+(.*)$/.exec(linea);
+      if (titulo) {
+        const nivel = titulo[1].length;
+        while (pila.length && pila[pila.length - 1].nivel >= nivel) pila.pop();
+        const nodo: OutlineNode = {
+          label: titulo[2],
+          kind: nivel <= 2 ? "chapter" : nivel === 3 ? "section" : "subsection",
+          page: pagina,
+          children: [],
+        };
+        colgar(nodo);
+        pila.push({ nivel, nodo });
+        grupo = null;
+        continue;
+      }
+
+      const aviso = /^>\s*\[!(\w+)\]\s*(.*)$/.exec(linea);
+      if (aviso) {
+        const esFormula = aviso[1] === "formula";
+        colgar({
+          label: esFormula ? aviso[2] : nucleo(aviso[2], 110),
+          kind: esFormula ? "formula" : "key",
+          page: pagina,
+        });
+        continue;
+      }
+
+      const vineta = /^-\s+(.*)$/.exec(linea);
+      if (vineta) {
+        const texto = vineta[1];
+        const etiqueta = /^\*\*([^*]+?):?\*\*:?\s*(.*)$/.exec(texto);
+        let nodo: OutlineNode | null = null;
+        if (etiqueta) {
+          // "**Mercaderías:** bienes…" o "**Tipo general del 21 %**, que se aplica…"
+          const detalle = etiqueta[2]
+            .replace(/^[,:;]\s*/, "")
+            .replace(/^(?:que\s+(?:se\s+)?)?(?:para|aplica(?:n)?\s+a|se\s+aplica(?:n)?\s+a)?\s*/i, "")
+            .replace(/[.]\s*$/, "");
+          nodo = {
+            label: detalle ? `${etiqueta[1].replace(/:$/, "")}: ${acortar(detalle, 80)}` : etiqueta[1],
+            kind: "detail",
+            page: pagina,
+          };
+        } else {
+          const def = new RegExp(`\\*\\*([^*]+)\\*\\*\\s+(${DEFINE})\\s+(.*)$`, "i").exec(texto);
+          const nombrado = /se (?:denomina|denominan|llama|llaman|conoce como)\s+\*\*([^*]+)\*\*\s+(?:porque|ya que|por)\s+(.*)$/i.exec(texto);
+          if (def) {
+            const verbo = /^(es|son)$/i.test(def[2]) ? "" : `${def[2]} `;
+            nodo = { label: `${mayusculaInicial(def[1])}: ${nucleo(verbo + def[3], 90)}`, kind: "concept", page: pagina };
+          } else if (nombrado) {
+            nodo = { label: `${mayusculaInicial(nombrado[1])}: ${nucleo(nombrado[2], 90)}`, kind: "concept", page: pagina };
+          } else if (/\*\*[^*]+\*\*/.test(texto)) {
+            const termino = /\*\*([^*]+)\*\*/.exec(texto)![1];
+            nodo = { label: `${mayusculaInicial(termino)}: ${nucleo(texto.replace(/\*\*/g, ""), 90)}`, kind: "concept", page: pagina };
+          } else if (PROCEDIMIENTO_RE.test(texto) && texto.split(/\s+/).length <= 40) {
+            const [, sujeto, verbo, resto] = PROCEDIMIENTO_RE.exec(texto)!;
+            nodo = { label: `${mayusculaInicial(sujeto)}: ${nucleo(`${verbo} ${resto}`, 90)}`, kind: "concept", page: pagina };
+          } else if (DATO_RE.test(texto) || IMPORTANT_RE.test(texto)) {
+            nodo = { label: nucleo(texto, 100), kind: "detail", page: pagina };
+          }
+        }
+        if (!nodo) continue;
+        if (grupo) {
+          grupo.children = grupo.children ?? [];
+          grupo.children.push(nodo);
+        } else colgar(nodo);
+        continue;
+      }
+
+      // Frase que presenta una lista ("Se clasifican en:"): agrupa sus tipos.
+      if (/:\s*$/.test(linea) && lineas[i + 2]?.trim().startsWith("- ")) {
+        const presenta = nucleo(linea.replace(/:\s*$/, ""), 90);
+        grupo = {
+          label: presenta.endsWith("…") ? presenta : `${presenta}:`,
+          kind: "concept",
+          page: pagina,
+          children: [],
+        };
+        colgar(grupo);
+        i++; // la línea en blanco que separa la frase de la lista
+      }
+    }
+  }
+
+  // Fuera ramas vacías de nivel profundo que no aportan nada.
+  const podar = (nodos: OutlineNode[]) => {
+    for (const n of nodos) {
+      if (n.children?.length) podar(n.children);
+      if (n.children && n.children.length === 0) delete n.children;
+    }
+  };
+  podar(raiz);
+  if (raiz.length === 0) return null;
+  return { title: documentTitle, nodes: raiz };
 }
 
 /**
- * Esquema jerarquico a partir de los titulos reales detectados en el PDF.
- * Es la opcion preferida: procede literalmente del documento.
+ * Esquema jerárquico. Se construye a partir del resumen: tiene sus títulos en
+ * orden y, debajo, sus conceptos, clasificaciones, fórmulas y avisos.
  */
 export function outlineFromHeadings(
   documentTitle: string,
   headings: { title: string; level: number; pageNumber: number }[],
   analyses: ChunkAnalysis[],
 ): OutlineTree | null {
+  const desdeResumen = esquemaDesdeResumen(documentTitle, analyses);
+  if (desdeResumen) return desdeResumen;
   if (headings.length < 2) return null;
-
-  const nodes: OutlineNode[] = [];
-  const stack: { level: number; node: OutlineNode }[] = [];
-
+  // Respaldo: solo los títulos del documento.
+  const nodos: OutlineNode[] = [];
+  const pila: { level: number; node: OutlineNode }[] = [];
   for (const heading of headings) {
     const node: OutlineNode = {
-      label: heading.title,
-      kind:
-        heading.level <= 1 ? "chapter" : heading.level === 2 ? "section" : "subsection",
+      label: limpiarTitulo(heading.title),
+      kind: heading.level <= 1 ? "chapter" : heading.level === 2 ? "section" : "subsection",
       page: heading.pageNumber,
-      children: [],
     };
-
-    while (stack.length && stack[stack.length - 1].level >= heading.level) stack.pop();
-
-    if (stack.length === 0) nodes.push(node);
-    else {
-      const parent = stack[stack.length - 1].node;
-      parent.children = parent.children ?? [];
-      parent.children.push(node);
-    }
-    stack.push({ level: heading.level, node });
+    while (pila.length && pila[pila.length - 1].level >= heading.level) pila.pop();
+    if (pila.length === 0) nodos.push(node);
+    else (pila[pila.length - 1].node.children ??= []).push(node);
+    pila.push({ level: heading.level, node });
   }
-
-  // Las formulas detectadas se cuelgan del apartado de su misma pagina.
-  const formulas = analyses.flatMap((analysis) =>
-    analysis.formulaRefs?.length
-      ? analysis.formulaRefs.map((ref) => ({ formula: ref.text, page: ref.page }))
-      : analysis.formulas.map((formula) => ({
-          formula,
-          page: analysis.sourcePages[0] ?? 1,
-        })),
-  );
-
-  // Cada formula se cuelga de un unico apartado, el primero de su pagina.
-  const used = new Set<string>();
-  const attach = (list: OutlineNode[]) => {
-    for (const node of list) {
-      if (node.children?.length) {
-        attach(node.children);
-        continue;
-      }
-      const matching = formulas
-        .filter((item) => item.page === node.page && !used.has(item.formula))
-        .slice(0, 4);
-      if (matching.length) {
-        node.children = matching.map((item) => {
-          used.add(item.formula);
-          return {
-            label: item.formula,
-            kind: "formula" as const,
-            page: item.page,
-          };
-        });
-      }
-    }
-  };
-  attach(nodes);
-
-  return { title: documentTitle, nodes };
+  return { title: documentTitle, nodes: nodos };
 }
 
-/** Esquema de respaldo, construido con los fragmentos analizados. */
+/** Esquema de respaldo (sin títulos detectados): el mismo, desde el resumen. */
 export function extractiveOutline(
   documentTitle: string,
   analyses: ChunkAnalysis[],
   chunks: Chunk[],
 ): OutlineTree {
-  const nodes: OutlineNode[] = [];
-  const stack: { level: number; node: OutlineNode }[] = [];
-
-  analyses.forEach((analysis, index) => {
-    const chunk = chunks[index];
-    const level = chunk?.level ?? 1;
-    const page = analysis.sourcePages[0] ?? chunk?.startPage;
-
-    const children: OutlineNode[] = [];
-    for (const concept of analysis.keyConcepts.slice(0, 6)) {
-      children.push({ label: concept, kind: "concept", page });
+  return (
+    esquemaDesdeResumen(documentTitle, analyses) ?? {
+      title: documentTitle,
+      nodes: analyses.map((analysis, index) => ({
+        label: analysis.title,
+        kind: "section" as const,
+        page: analysis.sourcePages[0] ?? chunks[index]?.startPage,
+      })),
     }
-    for (const formula of analysis.formulas.slice(0, 4)) {
-      children.push({ label: formula, kind: "formula", page });
-    }
-
-    const node: OutlineNode = {
-      label: analysis.title,
-      kind: level <= 1 ? "chapter" : level === 2 ? "section" : "subsection",
-      page,
-      children,
-    };
-
-    while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
-
-    if (stack.length === 0) {
-      nodes.push(node);
-    } else {
-      const parent = stack[stack.length - 1].node;
-      parent.children = parent.children ?? [];
-      parent.children.push(node);
-    }
-    stack.push({ level, node });
-  });
-
-  return { title: documentTitle, nodes };
+  );
 }

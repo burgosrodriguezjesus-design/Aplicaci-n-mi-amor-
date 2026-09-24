@@ -25,6 +25,7 @@ import { promisify } from "node:util";
 import { cpus } from "node:os";
 import { env } from "../env";
 import { abrirParaImagenes, imagenDePagina, type DocumentoPdf } from "./imagen-pagina";
+import { textoDesdeBloques, type BloqueOcr } from "./ocr-bloques";
 
 const run = promisify(execFile);
 
@@ -158,7 +159,11 @@ export async function renderPageToPng(
 /* ── Motor local ────────────────────────────────────────────── */
 
 type TesseractWorker = {
-  recognize: (image: Buffer) => Promise<{ data: { text: string } }>;
+  recognize: (
+    image: Buffer,
+    options?: object,
+    output?: object,
+  ) => Promise<{ data: { text: string; blocks?: BloqueOcr[] | null } }>;
   terminate: () => Promise<unknown>;
 };
 
@@ -458,13 +463,17 @@ export async function ocrPages(
           try {
             const text =
               engine === "tesseract" && worker
-                ? (
-                    await withTimeout(
-                      worker.recognize(png),
-                      RECOGNIZE_TIMEOUT_MS,
-                      `reconociendo la página ${pageNumber}`,
-                    )
-                  ).data.text.trim()
+                ? // Con la confianza de cada palabra, para tirar la basura
+                  // (gráficos, rayas, puntos de un índice): ocr-bloques.ts.
+                  (textoDesdeBloques(
+                    (
+                      await withTimeout(
+                        worker.recognize(png, {}, { text: true, blocks: true }),
+                        RECOGNIZE_TIMEOUT_MS,
+                        `reconociendo la página ${pageNumber}`,
+                      )
+                    ).data.blocks,
+                  ) ?? "")
                 : await transcribeWithAnthropic(png);
             if (text) {
               const result: OcrResult = { pageNumber, text, engine };

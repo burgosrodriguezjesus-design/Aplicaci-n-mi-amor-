@@ -132,10 +132,11 @@ export function SummaryTab({
       {summary.provider !== "anthropic" ? (
         <p
           className="card p-3 text-[0.8rem]"
-          style={{ background: "var(--warning-soft)", borderColor: "transparent" }}
+          style={{ background: "var(--accent-soft)", borderColor: "transparent" }}
         >
-          Este resumen se ha construido seleccionando frases literales del PDF (modo sin
-          IA). Es 100 % fiel al original, pero no reescribe ni simplifica las explicaciones.
+          Resumen hecho sin IA: ordena las ideas clave, definiciones, clasificaciones y
+          fórmulas de cada apartado con las mismas palabras del PDF, así que es 100 % fiel
+          al original. Con IA activada, además se reescriben y simplifican las explicaciones.
         </p>
       ) : null}
 
