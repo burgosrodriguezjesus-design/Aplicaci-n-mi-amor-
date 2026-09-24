@@ -14,20 +14,25 @@
  * mostrar en todo momento qué está ocurriendo.
  */
 import "server-only";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import { readFile } from "node:fs/promises";
 import { prisma } from "../db";
 import { env } from "../env";
-import { storage } from "../storage";
 import {
   extractPdf,
   PdfInvalidError,
   PdfProtectedError,
   looksLikePdf,
   type PageLine,
+  type PdfExtraction,
 } from "../pdf/extract";
-import { ocrAvailable, ocrEngineLabel, ocrPages } from "../pdf/ocr";
+import { ocrAvailable } from "../pdf/ocr";
+import { pdfEnDisco } from "../storage/en-disco";
+import {
+  avisarProgresoOcr,
+  contarPendientes,
+  MAX_INTENTOS,
+  reconocerRepartido,
+} from "./ocr-repartido";
 import {
   buildChunks,
   chunkOptionsFor,
@@ -78,152 +83,94 @@ async function setStatus(
   await updateJob(jobId, { stage: status, message, progress });
 }
 
-/** Fases 1 y 2: texto de cada página, con OCR cuando hace falta. */
+/**
+ * Fases 1 y 2: texto de cada página, con OCR cuando hace falta.
+ *
+ * El texto de las páginas se saca una sola vez y queda guardado. Las rondas
+ * siguientes (un libro escaneado necesita muchas) ya no vuelven a recorrer
+ * el PDF entero: solo siguen reconociendo las páginas que faltan, y eso lo
+ * comparten con los ayudantes que lanza la aplicación (ver ocr-repartido.ts).
+ */
 async function extractPages(
   documentId: string,
   jobId: string,
+  pdfPath: string,
   data: Buffer,
   deadline: number,
 ) {
-  await setStatus(documentId, jobId, "EXTRACTING", "Extrayendo contenido…", 8);
+  const [filas, guardado] = await Promise.all([
+    prisma.documentPage.count({ where: { documentId } }),
+    prisma.document.findUnique({ where: { id: documentId }, select: { pageCount: true } }),
+  ]);
+  const yaExtraido = filas > 0 && filas === guardado?.pageCount;
 
-  const extraction = await extractPdf(data);
+  let extraction: PdfExtraction | null = null;
+  if (!yaExtraido) {
+    await setStatus(documentId, jobId, "EXTRACTING", "Extrayendo contenido…", 8);
+    extraction = await extractPdf(data);
 
-  if (extraction.pageCount === 0) {
-    throw new ProcessingError(
-      "PDF_EMPTY",
-      "El PDF no contiene ninguna página legible.",
-    );
-  }
-
-  if (extraction.pageCount > env.limits.maxPages) {
-    throw new ProcessingError(
-      "TOO_MANY_PAGES",
-      `El documento tiene ${extraction.pageCount} páginas y el límite configurado es ${env.limits.maxPages}. Divídelo en varios PDF (por ejemplo, por temas) y súbelos por separado.`,
-    );
-  }
-
-  // Lo ya reconocido en un intento anterior se conserva. En un alojamiento
-  // que se duerme cuando nadie lo usa, un libro escaneado largo puede
-  // necesitar varias vueltas: empezar de cero cada vez seria no acabar nunca.
-  const yaReconocidas = new Map<number, string>();
-  const previas = await prisma.documentPage.findMany({
-    where: { documentId, source: "OCR" },
-    select: { pageNumber: true, text: true },
-  });
-  for (const pagina of previas) {
-    if (pagina.text.replace(/\s/g, "").length >= 40) {
-      yaReconocidas.set(pagina.pageNumber, pagina.text);
+    if (extraction.pageCount === 0) {
+      throw new ProcessingError(
+        "PDF_EMPTY",
+        "El PDF no contiene ninguna página legible.",
+      );
     }
-  }
 
-  await prisma.documentPage.deleteMany({ where: { documentId } });
-  await prisma.documentPage.createMany({
-    data: extraction.pages.map((page) => {
-      const recuperada = yaReconocidas.get(page.pageNumber);
-      if (recuperada) {
-        return {
-          documentId,
-          pageNumber: page.pageNumber,
-          text: recuperada,
-          charCount: recuperada.replace(/\s/g, "").length,
-          source: "OCR",
-        };
-      }
-      return {
+    if (extraction.pageCount > env.limits.maxPages) {
+      throw new ProcessingError(
+        "TOO_MANY_PAGES",
+        `El documento tiene ${extraction.pageCount} páginas y el límite configurado es ${env.limits.maxPages}. Divídelo en varios PDF (por ejemplo, por temas) y súbelos por separado.`,
+      );
+    }
+
+    // Un libro escaneado entero es mucho trabajo: el tope evita sorpresas.
+    // Las escaneadas que pasan del tope se marcan como ya intentadas.
+    const sobran = new Set(extraction.scannedPages.slice(env.limits.ocrMaxPages));
+
+    await prisma.documentPage.deleteMany({ where: { documentId } });
+    await prisma.documentPage.createMany({
+      data: extraction.pages.map((page) => ({
         documentId,
         pageNumber: page.pageNumber,
         text: page.text,
         charCount: page.charCount,
         source: page.source,
-      };
-    }),
-  });
+        ocrIntentos: sobran.has(page.pageNumber) ? MAX_INTENTOS : 0,
+      })),
+    });
 
-  await prisma.document.update({
-    where: { id: documentId },
-    data: {
-      pageCount: extraction.pageCount,
-      textCoverage: extraction.textCoverage,
-    },
-  });
+    await prisma.document.update({
+      where: { id: documentId },
+      data: {
+        pageCount: extraction.pageCount,
+        textCoverage: extraction.textCoverage,
+        ...(sobran.size > 0
+          ? {
+              errorCode: "OCR_PARTIAL",
+              errorMessage: `El documento tiene ${extraction.scannedPages.length} páginas escaneadas y se leen las ${env.limits.ocrMaxPages} primeras. Para leer más, sube el límite con OCR_MAX_PAGES o divide el PDF.`,
+            }
+          : {}),
+      },
+    });
+  }
 
-  let usedOcr = yaReconocidas.size > 0;
-  /** Paginas reconocidas en esta rebanada. */
-  let reconocidasAhora = 0;
+  const pageCount = extraction?.pageCount ?? guardado?.pageCount ?? filas;
 
-  // Solo se reconocen las que siguen sin texto.
-  const pendientesDeOcr = extraction.scannedPages.filter((n) => !yaReconocidas.has(n));
-
-  if (pendientesDeOcr.length > 0) {
-    if (ocrAvailable()) {
-      // Un libro escaneado entero gasta una llamada de visión por página:
-      // el tope evita sorpresas en la factura y en el tiempo de espera.
-      const targets = pendientesDeOcr.slice(0, env.limits.ocrMaxPages);
-      const omitted = pendientesDeOcr.length - targets.length;
-
-      await setStatus(
-        documentId,
-        jobId,
-        "EXTRACTING",
-        `Aplicando ${ocrEngineLabel()} a ${targets.length} ${
-          targets.length === 1 ? "página escaneada" : "páginas escaneadas"
-        }…`,
-        18,
-      );
-
-      if (omitted > 0) {
-        await prisma.document.update({
-          where: { id: documentId },
-          data: {
-            errorCode: "OCR_PARTIAL",
-            errorMessage: `El documento tiene ${extraction.scannedPages.length} páginas escaneadas y en esta pasada se reconocen ${targets.length}. Vuelve a procesarlo para seguir con las que falten —lo ya reconocido se conserva— o sube el límite con OCR_MAX_PAGES.`,
-          },
-        });
-      }
-
-      // El rasterizado necesita el PDF en disco: se deja en un temporal y se
-      // borra al terminar, pase lo que pase.
-      const workDir = await mkdtemp(path.join(os.tmpdir(), "estudia-ocr-"));
-      const pdfPath = path.join(workDir, "documento.pdf");
-
-      try {
-        await writeFile(pdfPath, data);
-        await ocrPages(
-          pdfPath,
-          targets,
-          async (done, total) => {
-            await setStatus(
-              documentId,
-              jobId,
-              "EXTRACTING",
-              `Reconociendo texto de imágenes (${done}/${total})…`,
-              18 + Math.round((done / total) * 12),
-            );
-          },
-          // Cada página se guarda nada más reconocerla, no al final.
-          async (result) => {
-            usedOcr = true;
-            reconocidasAhora += 1;
-            await prisma.documentPage.update({
-              where: {
-                documentId_pageNumber: { documentId, pageNumber: result.pageNumber },
-              },
-              data: {
-                text: result.text,
-                charCount: result.text.replace(/\s/g, "").length,
-                source: "OCR",
-              },
-            });
-          },
-          // Se para al agotarse la rebanada, pero nunca antes de reconocer
-          // una pagina: si no, un documento cuya extraccion ya consume la
-          // rebanada entera no avanzaria jamas.
-          () => reconocidasAhora > 0 && Date.now() >= deadline,
-        );
-      } finally {
-        await rm(workDir, { recursive: true, force: true }).catch(() => undefined);
-      }
+  if (ocrAvailable() && (await contarPendientes(documentId)) > 0) {
+    await setStatus(
+      documentId,
+      jobId,
+      "EXTRACTING",
+      "Leyendo las páginas escaneadas…",
+      18,
+    );
+    await avisarProgresoOcr(documentId, true);
+    const leidas = await reconocerRepartido({ documentId, pdfPath, deadline });
+    await avisarProgresoOcr(documentId, true);
+    // Si los ayudantes tienen reclamadas todas las que quedan, esta ronda no
+    // ha podido coger ninguna: se espera un poco en vez de volver en seguida.
+    if (leidas === 0 && Date.now() < deadline) {
+      await new Promise((listo) => setTimeout(listo, 2500));
     }
   }
 
@@ -235,37 +182,40 @@ async function extractPages(
 
   const withText = pages.filter((page) => page.source !== "EMPTY").length;
   const coverage = Math.round((withText / pages.length) * 100);
+  const usedOcr = pages.some((page) => page.source === "OCR");
 
   await prisma.document.update({
     where: { id: documentId },
     data: { textCoverage: coverage, usedOcr },
   });
 
-  // ¿Se ha quedado alguna pagina escaneada sin reconocer por falta de tiempo?
-  const sinReconocer = pages.filter(
-    (pagina) => pagina.source === "EMPTY" && pagina.text.replace(/\s/g, "").length < 40,
-  ).length;
-  const ocrPendiente = sinReconocer > 0 && ocrAvailable() && Date.now() >= deadline;
+  // Quedan paginas por leer: esto sigue en la siguiente ronda.
+  const ocrPendiente = ocrAvailable() && (await contarPendientes(documentId)) > 0;
+  if (ocrPendiente) {
+    return { pages, pageCount, coverage, linesByPage: new Map<number, PageLine[]>(), ocrPendiente };
+  }
 
-  // Quedarse sin tiempo no es lo mismo que no tener texto: si aun quedan
-  // paginas por reconocer, esto continua en la siguiente rebanada.
-  if (withText === 0 && !ocrPendiente) {
+  if (withText === 0) {
     throw new ProcessingError(
       "NO_TEXT",
       ocrAvailable()
-        ? "No hemos podido extraer texto de estas páginas. El documento es solo imágenes y el reconocimiento no ha devuelto nada legible: prueba con un escaneo de más calidad o más recto."
-        : "No hemos podido extraer texto de estas páginas: el PDF es solo imágenes y no hay ningún motor de reconocimiento disponible. Instala la dependencia opcional con `npm install tesseract.js` (no necesita ninguna clave) o configura ANTHROPIC_API_KEY.",
+        ? "No hemos podido leer texto en este PDF. Parece un escaneo en el que no se distinguen las letras: prueba con un escaneo más nítido y recto."
+        : "No hemos podido leer este PDF escaneado porque la lectura de imágenes no está disponible ahora mismo en el servidor. Vuelve a intentarlo en unos minutos.",
     );
   }
 
   // Las senales tipograficas (tamano de letra) no se guardan en la base de
-  // datos, pero sirven para decidir que es un titulo: se llevan en memoria.
+  // datos, pero sirven para decidir que es un titulo. Si esta ronda no ha
+  // leido el PDF y hay paginas con texto propio, se vuelven a sacar.
+  if (!extraction && pages.some((page) => page.source === "TEXT")) {
+    extraction = await extractPdf(data);
+  }
   const linesByPage = new Map<number, PageLine[]>();
-  for (const page of extraction.pages) {
+  for (const page of extraction?.pages ?? []) {
     if (page.lines && page.lines.length > 0) linesByPage.set(page.pageNumber, page.lines);
   }
 
-  return { pages, pageCount: extraction.pageCount, coverage, linesByPage, ocrPendiente };
+  return { pages, pageCount, coverage, linesByPage, ocrPendiente: false };
 }
 
 /** Fase 3: estructura y troceado. */
@@ -548,8 +498,11 @@ async function handleProcessDocument(job: {
   if (!document) throw new ProcessingError("NOT_FOUND", "El documento ya no existe.");
 
   let data: Buffer;
+  let pdfPath: string;
   try {
-    data = await storage.get(document.storageKey);
+    // Del disco temporal si este servidor ya lo tiene de una ronda anterior.
+    pdfPath = await pdfEnDisco(document.storageKey, document.sizeBytes);
+    data = await readFile(pdfPath);
   } catch {
     throw new ProcessingError(
       "FILE_MISSING",
@@ -563,7 +516,7 @@ async function handleProcessDocument(job: {
 
   let extracted;
   try {
-    extracted = await extractPages(job.documentId, job.id, data, job.deadline);
+    extracted = await extractPages(job.documentId, job.id, pdfPath, data, job.deadline);
   } catch (error) {
     if (error instanceof PdfProtectedError) {
       throw new ProcessingError(
@@ -577,6 +530,17 @@ async function handleProcessDocument(job: {
     throw error;
   }
 
+  // Si el reconocimiento se ha quedado a medias por falta de tiempo, aqui se
+  // corta: lo hecho ya esta guardado y la siguiente rebanada sigue por ahi.
+  // (Antes de pasar a "Analizando": mientras queden paginas por leer, el
+  // documento sigue en lectura y los ayudantes siguen entrando.)
+  if (extracted.ocrPendiente) {
+    return {
+      pending: true,
+      message: "Leyendo las páginas escaneadas…",
+    };
+  }
+
   await setStatus(
     job.documentId,
     job.id,
@@ -586,15 +550,6 @@ async function handleProcessDocument(job: {
     }…`,
     32,
   );
-
-  // Si el reconocimiento se ha quedado a medias por falta de tiempo, aqui se
-  // corta: lo hecho ya esta guardado y la siguiente rebanada sigue por ahi.
-  if (extracted.ocrPendiente) {
-    return {
-      pending: true,
-      message: "Reconociendo el texto por tandas…",
-    };
-  }
 
   const pageTexts = extracted.pages.map((page) => ({
     pageNumber: page.pageNumber,

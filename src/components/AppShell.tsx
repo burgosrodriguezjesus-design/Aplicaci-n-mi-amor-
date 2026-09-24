@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect } from "react";
 import { Icon } from "./ui/Icon";
 import { useTheme } from "./providers/ThemeProvider";
 import { PlayerProvider } from "./providers/PlayerProvider";
 import { FullPlayer, MiniPlayer } from "./player/Player";
 import { InstallPrompt } from "./InstallPrompt";
 import { api } from "@/lib/client/api";
+import { empujarTrabajo } from "@/lib/client/jobs";
 import type { Capabilities, SessionUser } from "@/lib/client/types";
 
 const SessionContext = createContext<{
@@ -78,6 +79,22 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+
+  // En Vercel no hay nada trabajando entre peticiones: el procesado avanza
+  // porque la aplicacion lo va pidiendo. Asi sigue avanzando en cualquier
+  // pantalla, no solo en la de subida, y se retoma al volver a la app.
+  useEffect(() => {
+    const empujar = () => {
+      if (document.visibilityState === "visible") void empujarTrabajo();
+    };
+    empujar();
+    const intervalo = window.setInterval(empujar, 15_000);
+    document.addEventListener("visibilitychange", empujar);
+    return () => {
+      window.clearInterval(intervalo);
+      document.removeEventListener("visibilitychange", empujar);
+    };
+  }, []);
 
   const isActive = (href: string) =>
     href === "/inicio" ? pathname === href : pathname.startsWith(href);

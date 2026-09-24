@@ -473,10 +473,10 @@ export function UploadZone() {
           style={{ background: "var(--accent-soft)", borderColor: "transparent" }}
         >
           {status && status.pageCount > 80
-            ? `Es un temario largo (${status.pageCount} páginas): puede tardar varios minutos. `
+            ? `Es un documento largo (${status.pageCount} páginas): puede tardar unos minutos. `
             : ""}
-          Puedes cerrar esta pantalla o seguir navegando. El análisis continúa en el
-          servidor y encontrarás el documento en tu biblioteca.
+          Deja la aplicación abierta mientras tanto (puedes ir a otras pantallas de
+          la app). Si la cierras, se pausa y sigue donde se quedó al volver a abrirla.
         </p>
       ) : null}
 

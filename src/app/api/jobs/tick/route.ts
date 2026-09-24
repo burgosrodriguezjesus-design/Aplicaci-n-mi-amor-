@@ -17,6 +17,7 @@ import { ok, route } from "@/lib/api";
 import { ensureWorker } from "@/lib/jobs";
 import { runQueue, sliceDeadline } from "@/lib/jobs/queue";
 import { env } from "@/lib/env";
+import { hayOcrPendiente } from "@/lib/jobs/ocr-repartido";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,10 +26,13 @@ export const maxDuration = 60;
 
 export const POST = route(async () => {
   // Solo se responde a alguien con sesión: no es un endpoint público.
-  await requireUser();
+  const user = await requireUser();
   // `run: false`: la rebanada la ejecuta esta misma petición, esperándola.
   await ensureWorker({ run: false });
 
   const { pending } = await runQueue({ deadline: sliceDeadline() });
-  return ok({ pending, sliceSeconds: env.jobs.sliceSeconds });
+  // `ocr`: hay paginas escaneadas esperando. La aplicacion lanza entonces
+  // ayudantes (/api/jobs/ocr) para leerlas en paralelo.
+  const ocr = pending ? await hayOcrPendiente(user.id) : false;
+  return ok({ pending, ocr, sliceSeconds: env.jobs.sliceSeconds });
 });

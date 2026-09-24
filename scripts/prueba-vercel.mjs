@@ -196,11 +196,44 @@ try {
   comprobar("los trozos se borran al terminar", repetida.status === 409);
 
   console.log("\n3. Procesado con reconocimiento de texto");
-  const limite = Date.now() + 15 * 60_000;
+  // Como la aplicacion: si hay paginas escaneadas, ayudantes en paralelo.
+  const AYUDANTES = Number(process.env.AYUDANTES ?? 3);
+  let ayudando = 0;
+  const ayudar = async () => {
+    ayudando += 1;
+    try {
+      for (;;) {
+        const t0 = Date.now();
+        const r = await json("/api/jobs/ocr", { method: "POST" });
+        if (process.env.DEPURAR) console.log(`    ayudante: ${r.status} ${JSON.stringify(r.body)} ${Date.now() - t0} ms`);
+        if (r.status !== 200 || !r.body?.pending) return;
+      }
+    } finally {
+      ayudando -= 1;
+    }
+  };
+  let procesando = true;
+  const vigia = (async () => {
+    while (procesando && AYUDANTES > 0) {
+      if (ayudando === 0) {
+        const r = await json("/api/jobs/ocr", { method: "POST" });
+        if (r.body?.pending) {
+          while (ayudando < AYUDANTES) void ayudar();
+          continue;
+        }
+      }
+      await new Promise((listo) => setTimeout(listo, 4000));
+    }
+  })();
+  const inicioProcesado = Date.now();
+  const limite = Date.now() + 30 * 60_000;
   let estado = null;
   let ultimoMensaje = "";
   while (Date.now() < limite) {
+    const t1 = Date.now();
     const rebanada = await json("/api/jobs/tick", { method: "POST" });
+    if (process.env.DEPURAR) console.log(`    rebanada: ${JSON.stringify(rebanada.body)} ${Date.now() - t1} ms`);
+    if (rebanada.body?.ocr) while (ayudando < AYUDANTES) void ayudar();
     estado = (await json(`/api/documents/${id}/status`)).body?.document ?? null;
     if (!estado || estado.status === "READY" || estado.status === "FAILED") break;
     if (estado.statusMessage && estado.statusMessage !== ultimoMensaje) {
@@ -209,6 +242,9 @@ try {
     }
     if (!rebanada.body?.pending) await new Promise((listo) => setTimeout(listo, 800));
   }
+  procesando = false;
+  await vigia;
+  console.log(`    (${Math.round((Date.now() - inicioProcesado) / 1000)} s con ${AYUDANTES} ayudantes)`);
   comprobar("termina bien", estado?.status === "READY", estado?.errorMessage ?? estado?.status);
   comprobar("todas las páginas con texto", estado?.textCoverage === 100, `${estado?.textCoverage}%`);
 

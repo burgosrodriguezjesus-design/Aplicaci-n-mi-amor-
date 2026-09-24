@@ -160,6 +160,13 @@ model DocumentPage {
   /// TEXT | OCR | EMPTY
   source     String @default("TEXT")
 
+  /// Reconocimiento de paginas escaneadas repartido entre varias peticiones:
+  /// quien la esta reconociendo ahora (y desde cuando) y cuantas veces se ha
+  /// intentado. Una pagina que el OCR no sabe leer no se reintenta sin fin.
+  ocrIntentos    Int       @default(0)
+  ocrToken       String?
+  ocrReclamadaEn DateTime?
+
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, pageNumber])

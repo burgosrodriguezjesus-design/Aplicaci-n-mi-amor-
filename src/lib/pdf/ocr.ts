@@ -50,7 +50,7 @@ function rasterScale() {
  * como núcleos (hasta 4). El de visión son llamadas de red: menos, para no
  * chocar con los límites de la API.
  */
-function ocrConcurrency(engine: OcrEngine) {
+export function ocrConcurrency(engine: OcrEngine = ocrEngine()) {
   const configured = Number(process.env.OCR_CONCURRENCY);
   if (Number.isFinite(configured) && configured >= 1) return Math.min(8, configured);
   if (engine === "anthropic") return 3;
@@ -61,9 +61,17 @@ function ocrConcurrency(engine: OcrEngine) {
 function moduleAvailable(name: string) {
   try {
     // require.resolve no sobrevive al empaquetado: se busca en node_modules.
+    // Vale el package.json o el codigo: al empaquetar para Vercel solo viaja
+    // lo que se usa, y el package.json no siempre (eso dejaba sin OCR).
     let dir = process.cwd();
     for (let depth = 0; depth < 6; depth++) {
-      if (existsSync(path.join(dir, "node_modules", name, "package.json"))) return true;
+      const carpeta = path.join(dir, "node_modules", name);
+      if (
+        existsSync(path.join(carpeta, "package.json")) ||
+        existsSync(path.join(carpeta, "src", "index.js"))
+      ) {
+        return true;
+      }
       const parent = path.dirname(dir);
       if (parent === dir) break;
       dir = parent;
@@ -320,9 +328,16 @@ async function transcribeWithAnthropic(png: Buffer): Promise<string> {
  *
  * @param pdfPath ruta al PDF en disco (no el buffer: el rasterizado va aparte)
  */
+/**
+ * De donde salen las paginas a reconocer: una lista fija, o una funcion que
+ * va dando lotes (cuando varias peticiones se reparten el mismo documento y
+ * cada una va reclamando paginas libres). Lote vacio = no hay mas.
+ */
+export type OrigenDePaginas = number[] | (() => Promise<number[]>);
+
 export async function ocrPages(
   pdfPath: string,
-  pageNumbers: number[],
+  pageNumbers: OrigenDePaginas,
   onProgress?: (done: number, total: number) => void | Promise<void>,
   /**
    * Se llama en cuanto una pagina queda reconocida, no al final. Permite
@@ -336,20 +351,34 @@ export async function ocrPages(
    * trabajo donde el alojamiento corta las peticiones.
    */
   shouldStop?: () => boolean,
+  /**
+   * Se llama por cada pagina que se ha intentado, se haya leido o no. Las que
+   * no llegan a intentarse (por pararse antes) no pasan por aqui.
+   */
+  onTried?: (pageNumber: number) => void | Promise<void>,
 ): Promise<OcrResult[]> {
   const engine = ocrEngine();
-  if (engine === "none" || pageNumbers.length === 0) return [];
+  if (engine === "none") return [];
+  if (Array.isArray(pageNumbers) && pageNumbers.length === 0) return [];
 
   const results: OcrResult[] = [];
   const scale = rasterScale();
 
   // Cola de lotes: cada hilo coge el siguiente que quede libre.
-  const batches: number[][] = [];
-  for (let start = 0; start < pageNumbers.length; start += BATCH_SIZE) {
-    batches.push(pageNumbers.slice(start, start + BATCH_SIZE));
+  let siguienteLote: () => Promise<number[]>;
+  let total = 0;
+  if (Array.isArray(pageNumbers)) {
+    const batches: number[][] = [];
+    for (let start = 0; start < pageNumbers.length; start += BATCH_SIZE) {
+      batches.push(pageNumbers.slice(start, start + BATCH_SIZE));
+    }
+    let cursor = 0;
+    total = pageNumbers.length;
+    siguienteLote = async () => batches[cursor++] ?? [];
+  } else {
+    siguienteLote = pageNumbers;
   }
 
-  let cursor = 0;
   let done = 0;
   const workers: TesseractWorker[] = [];
 
@@ -364,9 +393,8 @@ export async function ocrPages(
 
     for (;;) {
       if (shouldStop?.()) return;
-      const index = cursor++;
-      const batch = batches[index];
-      if (!batch) return;
+      const batch = await siguienteLote();
+      if (batch.length === 0) return;
 
       const images = await rasterizeBatch(pdfPath, batch, scale);
 
@@ -395,12 +423,15 @@ export async function ocrPages(
           }
         }
         done += 1;
-        await onProgress?.(done, pageNumbers.length);
+        await onTried?.(pageNumber);
+        await onProgress?.(done, total || done);
       }
     }
   };
 
-  const lanes = Math.min(ocrConcurrency(engine), batches.length);
+  const lanes = Array.isArray(pageNumbers)
+    ? Math.min(ocrConcurrency(engine), Math.ceil(pageNumbers.length / BATCH_SIZE))
+    : ocrConcurrency(engine);
 
   try {
     await Promise.all(Array.from({ length: lanes }, runLane));
