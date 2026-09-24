@@ -112,6 +112,7 @@ CREATE TABLE "DocumentPage" (
     "text" TEXT NOT NULL,
     "charCount" INTEGER NOT NULL DEFAULT 0,
     "source" TEXT NOT NULL DEFAULT 'TEXT',
+    "lineas" TEXT,
     "ocrIntentos" INTEGER NOT NULL DEFAULT 0,
     "ocrToken" TEXT,
     "ocrReclamadaEn" TIMESTAMP(3),

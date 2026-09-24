@@ -12,9 +12,15 @@
  * Es seguro llamarla de más: si no hay nada que hacer, termina enseguida.
  */
 import { api } from "./api";
-import { leerEnDispositivo } from "./ocr-dispositivo";
+import { extraerEnDispositivo, leerEnDispositivo } from "./ocr-dispositivo";
 
-type RespuestaOcr = { pending: boolean; enDispositivo?: boolean; documentId?: string | null };
+type RespuestaOcr = {
+  pending: boolean;
+  enDispositivo?: boolean;
+  documentId?: string | null;
+  /** Documento al que le falta el texto: lo saca este dispositivo. */
+  extraer?: string | null;
+};
 
 /** Si el dispositivo no puede leer, el servidor lo intenta como último recurso. */
 let servidorComoRespaldo = false;
@@ -65,6 +71,11 @@ async function vigilar(sigue: () => boolean, cancelado?: () => boolean) {
         const respuesta = await api.post<RespuestaOcr>("/api/jobs/ocr", {
           servidor: servidorComoRespaldo,
         });
+        if (respuesta.extraer) {
+          // Primero el texto de todas las páginas (segundos), luego las escaneadas.
+          await extraerEnDispositivo(respuesta.extraer);
+          continue;
+        }
         if (respuesta.pending && respuesta.enDispositivo && respuesta.documentId) {
           // Las lee este mismo dispositivo: más rápido y sin depender del servidor.
           const resultado = await leerEnDispositivo(respuesta.documentId, { cancelado });

@@ -75,8 +75,27 @@ export async function updateJob(
  * Lo ya reconocido no se pierde: cada pagina se guarda al terminarla.
  */
 export async function recoverStuckJobs() {
+  // Sin servidor (Vercel) hay muchos procesos a la vez: un RUNNING puede ser
+  // de otro que sigue vivo. Ahí se recupera por tiempo (ver recuperarCortados).
+  if (env.jobs.sliceSeconds > 0) return;
   await prisma.processingJob.updateMany({
     where: { status: "RUNNING" },
+    data: { status: "QUEUED", message: "Reanudando donde se quedó…" },
+  });
+}
+
+/**
+ * Sin servidor, una rebanada que el alojamiento corta (Vercel, a los 60 s)
+ * deja el trabajo en RUNNING para siempre: nadie lo devolvía a la cola y el
+ * documento se quedaba parado. Una rebanada nunca dura más que el límite de
+ * la peticion, así que un RUNNING más viejo que eso está muerto: vuelve a la
+ * cola, sin perder nada (lo hecho está guardado).
+ */
+async function recuperarCortados() {
+  if (env.jobs.sliceSeconds <= 0) return;
+  const limite = new Date(Date.now() - (env.jobs.sliceSeconds + 45) * 1000);
+  await prisma.processingJob.updateMany({
+    where: { status: "RUNNING", startedAt: { lt: limite } },
     data: { status: "QUEUED", message: "Reanudando donde se quedó…" },
   });
 }
@@ -102,11 +121,21 @@ export async function runQueue(opts: { deadline?: number } = {}): Promise<{ pend
         return { pending: quedan > 0 };
       }
 
+      await recuperarCortados();
       const job = await prisma.processingJob.findFirst({
         where: { status: "QUEUED" },
         orderBy: { createdAt: "asc" },
       });
-      if (!job) return { pending: false };
+      if (!job) {
+        // Nada en cola, pero puede haber uno en marcha en otro proceso: eso
+        // sigue siendo trabajo pendiente (si no, la app dejaba de empujar).
+        const enMarcha = await prisma.processingJob.count({ where: { status: "RUNNING" } });
+        if (enMarcha > 0 && env.jobs.sliceSeconds > 0) {
+          await new Promise((listo) => setTimeout(listo, 2000));
+          return { pending: true };
+        }
+        return { pending: false };
+      }
 
       const handler = handlers.get(job.type);
       if (!handler) {
@@ -121,8 +150,10 @@ export async function runQueue(opts: { deadline?: number } = {}): Promise<{ pend
         continue;
       }
 
-      await prisma.processingJob.update({
-        where: { id: job.id },
+      // Se coge solo si sigue en cola: otro proceso puede habérselo llevado
+      // en este mismo instante, y dos no pueden hacer el mismo trabajo.
+      const cogido = await prisma.processingJob.updateMany({
+        where: { id: job.id, status: "QUEUED" },
         data: {
           status: "RUNNING",
           startedAt: new Date(),
@@ -130,6 +161,7 @@ export async function runQueue(opts: { deadline?: number } = {}): Promise<{ pend
           message: "Procesando…",
         },
       });
+      if (cogido.count === 0) continue;
 
       try {
         const resultado = await handler({

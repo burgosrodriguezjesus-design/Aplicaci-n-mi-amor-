@@ -159,6 +159,9 @@ model DocumentPage {
   charCount  Int    @default(0)
   /// TEXT | OCR | EMPTY
   source     String @default("TEXT")
+  /// Lineas con su tamaño de letra y margen (JSON). Distinguen titulos de
+  /// parrafos; guardadas, no hace falta volver a abrir el PDF para el indice.
+  lineas     String?
 
   /// Reconocimiento de paginas escaneadas repartido entre varias peticiones:
   /// quien la esta reconociendo ahora (y desde cuando) y cuantas veces se ha

@@ -14,8 +14,9 @@
  * - Lo leído se manda por tandas; si se corta, se pierde como mucho la tanda.
  * - Mientras lee, la pantalla no se apaga.
  */
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import { descargarPdf } from "./pdf";
+import { paginaDesdeItems, type TextItem } from "@/lib/pdf/lineas";
 
 const BASE = "/ocr";
 /** Ancho al que se dibuja la página: por debajo se come tildes y comas. */
@@ -30,13 +31,18 @@ type Motor = {
   createWorker: (idioma: string, oem: number, opciones: Record<string, unknown>) => Promise<Lector>;
 };
 type PdfPagina = {
+  getTextContent: () => Promise<{ items: unknown[] }>;
   getViewport: (o: { scale: number }) => { width: number; height: number };
   render: (o: { canvasContext: CanvasRenderingContext2D; viewport: unknown }) => {
     promise: Promise<void>;
   };
   cleanup: () => void;
 };
-type PdfDoc = { getPage: (n: number) => Promise<PdfPagina>; destroy: () => Promise<void> };
+type PdfDoc = {
+  numPages: number;
+  getPage: (n: number) => Promise<PdfPagina>;
+  destroy: () => Promise<void>;
+};
 type PdfJs = {
   GlobalWorkerOptions: { workerSrc: string };
   getDocument: (o: { data: Uint8Array }) => { promise: Promise<PdfDoc> };
@@ -91,6 +97,33 @@ function cargarPdfjs(): Promise<PdfJs> {
       throw error;
     });
   return pdfjs;
+}
+
+/**
+ * El PDF abierto, compartido entre la extracción del texto y la lectura de
+ * las escaneadas: un libro de 60 MB se abre una vez, no dos.
+ */
+let pdfAbierto: { documentId: string; doc: Promise<PdfDoc> } | null = null;
+
+function abrirPdf(documentId: string): Promise<PdfDoc> {
+  if (pdfAbierto?.documentId === documentId) return pdfAbierto.doc;
+  void cerrarPdf();
+  const doc = (async () => {
+    const pdf = await cargarPdfjs();
+    const fichero = pdfsLocales.get(documentId) ?? (await descargarPdf(documentId));
+    return pdf.getDocument({ data: new Uint8Array(await fichero.arrayBuffer()) }).promise;
+  })();
+  pdfAbierto = { documentId, doc };
+  doc.catch(() => {
+    if (pdfAbierto?.doc === doc) pdfAbierto = null;
+  });
+  return doc;
+}
+
+async function cerrarPdf() {
+  const abierto = pdfAbierto;
+  pdfAbierto = null;
+  if (abierto) await (await abierto.doc.catch(() => null))?.destroy().catch(() => undefined);
 }
 
 async function crearLector(modelo: "rapido" | "preciso"): Promise<Lector> {
@@ -184,15 +217,12 @@ async function leer(documentId: string, cancelado?: () => boolean): Promise<Resu
     }
 
     try {
-      const [pdf, ...creados] = await Promise.all([
-        cargarPdfjs(),
+      const [abierto, ...creados] = await Promise.all([
+        abrirPdf(documentId),
         ...Array.from({ length: n }, () => crearLector("rapido")),
       ]);
       lectores = creados as Lector[];
-      const fichero = pdfsLocales.get(documentId) ?? (await descargarPdf(documentId));
-      doc = await (pdf as PdfJs).getDocument({
-        data: new Uint8Array(await fichero.arrayBuffer()),
-      }).promise;
+      doc = abierto as PdfDoc;
     } catch {
       return "sin-motor";
     }
@@ -244,7 +274,9 @@ async function leer(documentId: string, cancelado?: () => boolean): Promise<Resu
             accion: "reclamar",
             cuantas: n * 2,
           });
-        } catch {
+        } catch (error) {
+          // El documento ya no existe o ya no se procesa: no hay nada que leer.
+          if (error instanceof ApiError && error.status >= 400 && error.status < 500) break;
           await esperar(3000);
           continue;
         }
@@ -329,7 +361,93 @@ async function leer(documentId: string, cancelado?: () => boolean): Promise<Resu
     await Promise.all(lectores.map((l) => l.terminate().catch(() => undefined)));
     const p = preciso ? await (preciso as Promise<Lector | null>).catch(() => null) : null;
     await p?.terminate().catch(() => undefined);
-    await doc?.destroy().catch(() => undefined);
+    // Terminado este documento, se suelta la memoria del PDF.
+    if (!cancelado?.()) await cerrarPdf();
     await bloqueo?.release().catch(() => undefined);
   }
+}
+
+/* ── Extracción del texto en el dispositivo ────────────────────────── */
+
+/** Tamaño máximo (aprox.) de cada envío: muy por debajo de los 4,5 MB de Vercel. */
+const BYTES_POR_ENVIO = 1_500_000;
+
+let extrayendo: { documentId: string; promesa: Promise<"hecho" | "error"> } | null = null;
+
+/**
+ * Saca el texto de todas las páginas aquí mismo y lo manda al servidor.
+ * Con el PDF recién subido tarda segundos incluso con cientos de páginas, y
+ * el servidor no tiene que abrirlo. Usa exactamente el mismo código que el
+ * servidor (src/lib/pdf/lineas.ts): el resultado es idéntico.
+ */
+export function extraerEnDispositivo(documentId: string): Promise<"hecho" | "error"> {
+  if (extrayendo?.documentId === documentId) return extrayendo.promesa;
+  const promesa = extraer(documentId).finally(() => {
+    extrayendo = null;
+  });
+  extrayendo = { documentId, promesa };
+  return promesa;
+}
+
+async function extraer(documentId: string): Promise<"hecho" | "error"> {
+  let doc: PdfDoc;
+  try {
+    doc = await abrirPdf(documentId);
+  } catch {
+    // Protegido, dañado o sin motor: lo hará el servidor, que da el error claro.
+    return "error";
+  }
+
+  const total = doc.numPages;
+  type Envio = { pageNumber: number; text: string; source: "TEXT" | "EMPTY"; lines: unknown[] };
+  let lote: Envio[] = [];
+  let bytes = 0;
+
+  const enviar = async (fin: boolean) => {
+    for (let intento = 1; ; intento++) {
+      try {
+        await api.post(`/api/documents/${documentId}/paginas`, { pageCount: total, lote, fin });
+        lote = [];
+        bytes = 0;
+        return;
+      } catch (error) {
+        // Límite de páginas, documento ya terminado...: no tiene arreglo aquí.
+        if (error instanceof ApiError && error.status >= 400 && error.status < 500) throw error;
+        if (intento >= 3) throw error;
+        await esperar(1500 * intento);
+      }
+    }
+  };
+
+  try {
+    for (let numero = 1; numero <= total; numero++) {
+      let pagina: ReturnType<typeof paginaDesdeItems>;
+      try {
+        const p = await doc.getPage(numero);
+        const contenido = await p.getTextContent();
+        pagina = paginaDesdeItems(contenido.items as TextItem[]);
+        p.cleanup();
+      } catch {
+        pagina = paginaDesdeItems([]);
+      }
+      const envio = { pageNumber: numero, text: pagina.text, source: pagina.source, lines: pagina.lines };
+      lote.push(envio);
+      bytes += pagina.text.length * 2 + pagina.lines.length * 60;
+      if (bytes >= BYTES_POR_ENVIO || lote.length >= 60) await enviar(false);
+    }
+    await enviar(true);
+    return "hecho";
+  } catch {
+    return "error";
+  }
+}
+
+/**
+ * Todo el trabajo del dispositivo con un PDF recién elegido: primero el texto
+ * de todas las páginas (segundos) y en seguida las escaneadas. Empieza
+ * mientras el PDF aún se está subiendo.
+ */
+export async function procesarEnDispositivo(documentId: string, cancelado?: () => boolean) {
+  if ((await extraerEnDispositivo(documentId)) !== "hecho" || cancelado?.()) return;
+  await leerEnDispositivo(documentId, { cancelado });
 }

@@ -45,3 +45,8 @@ export async function borrarTrozos(userId: string, uploadId: string, partes: num
     await storage.delete(claveDeTrozo(userId, uploadId, parte)).catch(() => undefined);
   }
 }
+
+/** Claves de los trozos de una subida, en orden. */
+export function clavesDeTrozos(userId: string, uploadId: string, partes: number) {
+  return Array.from({ length: partes }, (_, parte) => claveDeTrozo(userId, uploadId, parte));
+}

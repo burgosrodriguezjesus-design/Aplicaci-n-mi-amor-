@@ -89,6 +89,7 @@ export const STYLE_OPTIONS = [
 ] as const;
 
 export const STATUS_COPY: Record<string, string> = {
+  UPLOADING: "Subiendo PDF…",
   UPLOADED: "Subiendo PDF…",
   EXTRACTING: "Extrayendo contenido…",
   ANALYZING: "Analizando páginas…",

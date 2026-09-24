@@ -25,6 +25,8 @@ export const GET = route(async (request: Request) => {
   const documents = await prisma.document.findMany({
     where: {
       userId: user.id,
+      // Una subida a medias no es todavía un documento de la biblioteca.
+      status: { not: "UPLOADING" },
       ...(subjectId ? { subjectId } : {}),
       ...(query ? { title: { contains: query } } : {}),
     },

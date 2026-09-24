@@ -17,6 +17,7 @@ import {
   avisarProgresoOcr,
   documentoConOcrLibre,
   documentoConOcrPendiente,
+  documentoPorExtraer,
   hayOcrPendiente,
   ocrEnServidor,
   reconocerRepartido,
@@ -36,6 +37,13 @@ export const POST = route(async (request: Request) => {
     .json()
     .then((cuerpo: { servidor?: boolean }) => cuerpo?.servidor === true)
     .catch(() => false);
+  // Primero lo primero: si a un documento le falta el texto, lo saca el
+  // dispositivo (en segundos, sin que el servidor abra el PDF).
+  const extraer = await documentoPorExtraer(user.id);
+  if (extraer && !forzar) {
+    return ok({ pending: true, enDispositivo: true, extraer, documentId: null });
+  }
+
   if (!ocrEnServidor() && !forzar) {
     const pendiente = await documentoConOcrPendiente(user.id);
     return ok({

@@ -66,7 +66,7 @@ export async function hayOcrPendiente(userId: string) {
     where: {
       source: "EMPTY",
       ocrIntentos: { lt: MAX_INTENTOS },
-      document: { userId, status: { notIn: ["READY", "FAILED"] } },
+      document: { userId, status: { notIn: ["READY", "FAILED", "UPLOADING"] } },
     },
     select: { id: true },
   });
@@ -79,7 +79,7 @@ export async function documentoConOcrLibre(userId: string) {
     where: {
       source: "EMPTY",
       ocrIntentos: { lt: MAX_INTENTOS },
-      document: { userId, status: { notIn: ["READY", "FAILED"] } },
+      document: { userId, status: { notIn: ["READY", "FAILED", "UPLOADING"] } },
       ...libre(),
     },
     select: {
@@ -95,11 +95,26 @@ export async function documentoConOcrPendiente(userId: string) {
     where: {
       source: "EMPTY",
       ocrIntentos: { lt: MAX_INTENTOS },
-      document: { userId, status: { notIn: ["READY", "FAILED"] } },
+      document: { userId, status: { notIn: ["READY", "FAILED", "UPLOADING"] } },
     },
     select: { document: { select: { id: true } } },
   });
   return pagina?.document ?? null;
+}
+
+/**
+ * Un documento de este usuario al que aún le falta el texto de las páginas
+ * (para que lo saque el dispositivo, que lo hace en segundos).
+ */
+export async function documentoPorExtraer(userId: string) {
+  const enMarcha = await prisma.document.findMany({
+    where: { userId, status: { in: ["UPLOADED", "QUEUED", "EXTRACTING"] } },
+    select: { id: true, pageCount: true, _count: { select: { pages: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+  });
+  const falta = enMarcha.find((d) => d.pageCount === 0 || d._count.pages !== d.pageCount);
+  return falta?.id ?? null;
 }
 
 /** Reclama hasta `cuantas` paginas libres. Devuelve las que se han conseguido. */

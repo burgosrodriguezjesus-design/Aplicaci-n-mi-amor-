@@ -80,6 +80,29 @@ try {
 }
 comprobar("leer algo inexistente da error claro", avisa);
 
+// ── Fichero compuesto por trozos (así se guarda un PDF subido por partes)
+const base = `documents/prueba/compuesto-${Date.now()}`;
+const trozos = [Buffer.alloc(1000, 1), Buffer.alloc(1500, 2), Buffer.alloc(700, 3)];
+const clavesTrozos = trozos.map((_, i) => `uploads/prueba/${Date.now()}/${i}`);
+for (let i = 0; i < trozos.length; i++) await storage.put(clavesTrozos[i], trozos[i], "application/octet-stream");
+await storage.componer!(base, clavesTrozos, "application/pdf");
+const entero = Buffer.concat(trozos);
+comprobar("compuesto: se lee entero igual", (await storage.get(base)).equals(entero));
+comprobar("compuesto: el tamaño es la suma", (await storage.size(base)) === entero.length);
+comprobar("compuesto: un tramo que cruza dos trozos",
+  (await leerTramo(base, 900, 1100)).equals(entero.subarray(900, 1100)));
+comprobar("compuesto: un tramo que cruza los tres",
+  (await leerTramo(base, 999, 2600)).equals(entero.subarray(999, 2600)));
+const flujoC = (await storage.stream(base)).getReader();
+const partesC: Uint8Array[] = [];
+for (;;) { const { done, value } = await flujoC.read(); if (done) break; if (value) partesC.push(value); }
+comprobar("compuesto: se sirve por streaming igual", Buffer.concat(partesC).equals(entero));
+comprobar("compuesto: los trozos ya no están con su nombre de subida",
+  !(await storage.exists(clavesTrozos[0])));
+await storage.delete(base);
+const restos = await prisma.storedFile.count({ where: { key: { startsWith: base } } });
+comprobar("compuesto: al borrarlo se van también sus trozos", restos === 0);
+
 await prisma.$disconnect();
 console.log(fallos ? `\n${fallos} comprobación(es) con fallos` : "\nEl almacenamiento en base de datos funciona");
 process.exit(fallos ? 1 : 0);

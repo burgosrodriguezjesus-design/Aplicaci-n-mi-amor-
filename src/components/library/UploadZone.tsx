@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, uploadDocument, type UploadHandle } from "@/lib/client/api";
 import { empujarTrabajo } from "@/lib/client/jobs";
-import { recordarPdfLocal } from "@/lib/client/ocr-dispositivo";
+import { procesarEnDispositivo, recordarPdfLocal } from "@/lib/client/ocr-dispositivo";
 import {
   DEPTH_OPTIONS,
   LEVEL_OPTIONS,
@@ -64,6 +64,8 @@ export function UploadZone() {
   const [topicId, setTopicId] = useState("");
 
   const handleRef = useRef<UploadHandle | null>(null);
+  /** Subida cancelada o descartada: el dispositivo deja de leer ese PDF. */
+  const cancelledRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -135,6 +137,7 @@ export function UploadZone() {
 
   const start = async () => {
     if (!file) return;
+    cancelledRef.current = false;
     setPhase("uploading");
     setUploadPercent(0);
     setError(null);
@@ -149,6 +152,12 @@ export function UploadZone() {
         topicId,
       },
       setUploadPercent,
+      (nuevoId) => {
+        // El dispositivo empieza a sacar el texto y a leer las escaneadas
+        // ya, mientras el PDF sube: la subida no hace esperar a la lectura.
+        recordarPdfLocal(nuevoId, file);
+        void procesarEnDispositivo(nuevoId, () => cancelledRef.current);
+      },
     );
     handleRef.current = handle;
 
@@ -172,11 +181,13 @@ export function UploadZone() {
   };
 
   const cancel = () => {
+    cancelledRef.current = true;
     handleRef.current?.cancel();
     handleRef.current = null;
   };
 
   const reset = () => {
+    cancelledRef.current = true;
     setFile(null);
     setPhase("idle");
     setUploadPercent(0);

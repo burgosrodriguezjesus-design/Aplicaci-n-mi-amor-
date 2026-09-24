@@ -23,6 +23,11 @@ export interface StorageDriver {
   exists(key: string): Promise<boolean>;
   /** Un tramo [inicio, fin) del fichero, sin traer el resto. Opcional. */
   getRange?(key: string, inicio: number, fin: number): Promise<Buffer>;
+  /**
+   * Forma `destino` con ficheros ya guardados, en orden, sin copiar los datos
+   * (los trozos de una subida pasan a ser el fichero). Opcional.
+   */
+  componer?(destino: string, partes: string[], contentType: string): Promise<void>;
 }
 
 // turbopackIgnore: la carpeta la elige una variable; rastrearla metería el

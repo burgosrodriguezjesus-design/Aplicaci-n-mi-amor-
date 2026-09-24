@@ -139,10 +139,13 @@ export function uploadDocument(
   file: File,
   fields: Record<string, string>,
   onProgress: (percent: number) => void,
+  /** En cuanto existe el documento (al empezar), para ir leyéndolo a la vez. */
+  onInicio?: (documentId: string) => void,
 ): UploadHandle {
   let actual: XMLHttpRequest | null = null;
   let cancelada = false;
-  let subida: { id: string; partes: number } | null = null;
+  let subida: { id: string; partes: number; documentId: string } | null = null;
+  const campos = Object.fromEntries(Object.entries(fields).filter(([, valor]) => valor));
   const registrar = (xhr: XMLHttpRequest) => {
     actual = xhr;
   };
@@ -152,14 +155,16 @@ export function uploadDocument(
     const inicio = await enviar(
       "POST",
       "/api/uploads",
-      JSON.stringify({ name: file.name, size: file.size }),
+      JSON.stringify({ name: file.name, size: file.size, ...campos }),
       null,
       registrar,
     );
     const uploadId = String(inicio.uploadId);
     const porTrozo = Number(inicio.chunkBytes);
     const partes = Number(inicio.parts);
-    subida = { id: uploadId, partes };
+    const documentId = String(inicio.documentId ?? "");
+    subida = { id: uploadId, partes, documentId };
+    if (documentId) onInicio?.(documentId);
 
     let enviados = 0;
     for (let parte = 0; parte < partes; parte++) {
@@ -186,11 +191,17 @@ export function uploadDocument(
       enviados += trozo.size;
     }
 
-    const campos = Object.fromEntries(Object.entries(fields).filter(([, valor]) => valor));
     const resultado = await enviar(
       "POST",
       `/api/uploads/${uploadId}`,
-      JSON.stringify({ name: file.name, parts: partes, ...campos }),
+      // Este dispositivo sacará el texto de las páginas (ver ocr-dispositivo).
+      JSON.stringify({
+        name: file.name,
+        parts: partes,
+        documentId: documentId || undefined,
+        extraeDispositivo: true,
+        ...campos,
+      }),
       null,
       registrar,
     );
@@ -199,9 +210,10 @@ export function uploadDocument(
   })().catch((error) => {
     // Lo que hubiera llegado no sirve de nada: se borra.
     if (subida) {
-      void fetch(`/api/uploads/${subida.id}?parts=${subida.partes}`, { method: "DELETE" }).catch(
-        () => undefined,
-      );
+      const doc = subida.documentId ? `&documentId=${encodeURIComponent(subida.documentId)}` : "";
+      void fetch(`/api/uploads/${subida.id}?parts=${subida.partes}${doc}`, {
+        method: "DELETE",
+      }).catch(() => undefined);
     }
     throw error instanceof ApiError
       ? error

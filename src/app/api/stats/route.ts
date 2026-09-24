@@ -22,7 +22,7 @@ export const GET = route(async () => {
   const [recent, inProgress, subjects, sessions, documentCount, readyCount] =
     await Promise.all([
       prisma.document.findMany({
-        where: { userId: user.id },
+        where: { userId: user.id, status: { not: "UPLOADING" } },
         orderBy: { createdAt: "desc" },
         take: 6,
         include: {
@@ -49,7 +49,7 @@ export const GET = route(async () => {
         where: { userId: user.id, day: { in: days } },
         select: { day: true, kind: true, seconds: true },
       }),
-      prisma.document.count({ where: { userId: user.id } }),
+      prisma.document.count({ where: { userId: user.id, status: { not: "UPLOADING" } } }),
       prisma.document.count({ where: { userId: user.id, status: "READY" } }),
     ]);
 

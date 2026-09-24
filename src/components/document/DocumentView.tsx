@@ -324,9 +324,10 @@ export function DocumentView({ documentId }: { documentId: string }) {
           <ProgressBar value={document_.processingProgress} />
           <p className="text-[0.75rem]" style={{ color: "var(--text-muted)" }}>
             {document_.pageCount > 80
-              ? `Son ${document_.pageCount} páginas, así que puede tardar varios minutos. `
+              ? `Son ${document_.pageCount} páginas: puede tardar unos minutos. `
               : ""}
-            Puedes salir de esta pantalla: el proceso sigue en el servidor.
+            Deja la aplicación abierta (puedes ir a otras pantallas). Si la cierras, se
+            pausa y sigue donde se quedó al volver.
           </p>
         </div>
       ) : null}
