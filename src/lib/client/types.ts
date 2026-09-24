@@ -4,6 +4,8 @@ export type Capabilities = {
   aiEnabled: boolean;
   serverTts: boolean;
   maxUploadMb: number;
+  /** Por encima de esto el PDF se queda en el dispositivo. */
+  maxServidorMb: number;
   maxPages: number;
 };
 
@@ -115,6 +117,8 @@ export type DocumentDetail = {
     errorMessage: string | null;
     textCoverage: number;
     usedOcr: boolean;
+    /** El PDF original está solo en el dispositivo que lo subió. */
+    pdfEnDispositivo?: boolean;
     summaryDepth: string;
     educationLevel: string;
     explanationStyle: string;

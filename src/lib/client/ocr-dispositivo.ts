@@ -17,6 +17,7 @@
 import { api, ApiError } from "./api";
 import { descargarPdf } from "./pdf";
 import { paginaDesdeItems, type TextItem } from "@/lib/pdf/lineas";
+import { guardarPdfLocal, pdfLocal } from "./pdf-local";
 
 const BASE = "/ocr";
 /** Ancho al que se dibuja la página: por debajo se come tildes y comas. */
@@ -43,12 +44,17 @@ type PdfDoc = {
   getPage: (n: number) => Promise<PdfPagina>;
   destroy: () => Promise<void>;
 };
+type RangoPdf = {
+  requestDataRange: (inicio: number, fin: number) => void;
+  onDataRange: (inicio: number, datos: Uint8Array) => void;
+};
 type PdfJs = {
   GlobalWorkerOptions: { workerSrc: string };
-  getDocument: (o: { data: Uint8Array }) => { promise: Promise<PdfDoc> };
+  PDFDataRangeTransport: new (largo: number, inicial: Uint8Array | null) => RangoPdf;
+  getDocument: (o: Record<string, unknown>) => { promise: Promise<PdfDoc> };
 };
 
-export type ResultadoLectura = "hecho" | "sin-motor" | "cancelado";
+export type ResultadoLectura = "hecho" | "sin-motor" | "sin-pdf" | "cancelado";
 
 /* ── PDF recién subido: se lee de memoria, sin volver a descargarlo ──── */
 
@@ -57,6 +63,17 @@ const pdfsLocales = new Map<string, Blob>();
 export function recordarPdfLocal(documentId: string, fichero: Blob) {
   pdfsLocales.clear(); // uno basta: un libro escaneado pesa mucho
   pdfsLocales.set(documentId, fichero);
+}
+
+/** ¿Tiene este dispositivo el PDF (en memoria o guardado)? */
+export async function tienePdfLocal(documentId: string) {
+  return pdfsLocales.has(documentId) || (await pdfLocal(documentId)) !== null;
+}
+
+/** Guarda para siempre en el dispositivo un PDF que no se sube al servidor. */
+export async function conservarPdfLocal(documentId: string, fichero: Blob) {
+  recordarPdfLocal(documentId, fichero);
+  await guardarPdfLocal(documentId, fichero);
 }
 
 /* ── Carga perezosa del motor y del dibujante ──────────────────────── */
@@ -105,13 +122,49 @@ function cargarPdfjs(): Promise<PdfJs> {
  */
 let pdfAbierto: { documentId: string; doc: Promise<PdfDoc> } | null = null;
 
-function abrirPdf(documentId: string): Promise<PdfDoc> {
+/** El PDF no está en este dispositivo y el servidor tampoco lo tiene. */
+export class SinPdfLocal extends Error {}
+
+/** El PDF: de memoria, del almacén del dispositivo o, si no, del servidor. */
+async function obtenerPdf(documentId: string, soloDispositivo = false): Promise<Blob> {
+  const enMemoria = pdfsLocales.get(documentId);
+  if (enMemoria) return enMemoria;
+  const guardado = await pdfLocal(documentId);
+  if (guardado) return guardado;
+  if (soloDispositivo) throw new SinPdfLocal();
+  return descargarPdf(documentId);
+}
+
+/**
+ * Abre el PDF leyendo solo los trozos que hacen falta en cada momento, en
+ * vez de cargarlo entero en memoria. Con un libro de 400 MB, cargarlo de
+ * golpe (y copiarlo al hilo de pdf.js) tumbaría el navegador del móvil.
+ */
+async function abrirDesdeBlob(pdf: PdfJs, fichero: Blob): Promise<PdfDoc> {
+  const TROZO = 1 << 20;
+  const inicial = new Uint8Array(await fichero.slice(0, Math.min(fichero.size, TROZO)).arrayBuffer());
+  const rango = new pdf.PDFDataRangeTransport(fichero.size, inicial);
+  rango.requestDataRange = (inicio: number, fin: number) => {
+    void fichero
+      .slice(inicio, fin)
+      .arrayBuffer()
+      .then((datos) => rango.onDataRange(inicio, new Uint8Array(datos)));
+  };
+  return pdf.getDocument({
+    range: rango,
+    length: fichero.size,
+    rangeChunkSize: TROZO,
+    disableAutoFetch: true,
+    disableStream: true,
+  }).promise;
+}
+
+function abrirPdf(documentId: string, soloDispositivo = false): Promise<PdfDoc> {
   if (pdfAbierto?.documentId === documentId) return pdfAbierto.doc;
   void cerrarPdf();
   const doc = (async () => {
     const pdf = await cargarPdfjs();
-    const fichero = pdfsLocales.get(documentId) ?? (await descargarPdf(documentId));
-    return pdf.getDocument({ data: new Uint8Array(await fichero.arrayBuffer()) }).promise;
+    return abrirDesdeBlob(pdf, await obtenerPdf(documentId, soloDispositivo));
   })();
   pdfAbierto = { documentId, doc };
   doc.catch(() => {
@@ -186,18 +239,22 @@ let enCurso: { documentId: string; promesa: Promise<ResultadoLectura> } | null =
 /** Una sola lectura a la vez. Si ya se está leyendo ese documento, se une. */
 export function leerEnDispositivo(
   documentId: string,
-  opciones: { cancelado?: () => boolean } = {},
+  opciones: { cancelado?: () => boolean; soloDispositivo?: boolean } = {},
 ): Promise<ResultadoLectura> {
   if (enCurso?.documentId === documentId) return enCurso.promesa;
   if (enCurso) return enCurso.promesa.then(() => leerEnDispositivo(documentId, opciones));
-  const promesa = leer(documentId, opciones.cancelado).finally(() => {
+  const promesa = leer(documentId, opciones.cancelado, opciones.soloDispositivo).finally(() => {
     enCurso = null;
   });
   enCurso = { documentId, promesa };
   return promesa;
 }
 
-async function leer(documentId: string, cancelado?: () => boolean): Promise<ResultadoLectura> {
+async function leer(
+  documentId: string,
+  cancelado?: () => boolean,
+  soloDispositivo = false,
+): Promise<ResultadoLectura> {
   const n = carriles();
   let lectores: Lector[] = [];
   let preciso: Promise<Lector | null> | null = null;
@@ -218,13 +275,13 @@ async function leer(documentId: string, cancelado?: () => boolean): Promise<Resu
 
     try {
       const [abierto, ...creados] = await Promise.all([
-        abrirPdf(documentId),
+        abrirPdf(documentId, soloDispositivo),
         ...Array.from({ length: n }, () => crearLector("rapido")),
       ]);
       lectores = creados as Lector[];
       doc = abierto as PdfDoc;
-    } catch {
-      return "sin-motor";
+    } catch (error) {
+      return error instanceof SinPdfLocal ? "sin-pdf" : "sin-motor";
     }
 
     const releer = async (imagen: Blob): Promise<Lectura | null> => {
@@ -372,7 +429,8 @@ async function leer(documentId: string, cancelado?: () => boolean): Promise<Resu
 /** Tamaño máximo (aprox.) de cada envío: muy por debajo de los 4,5 MB de Vercel. */
 const BYTES_POR_ENVIO = 1_500_000;
 
-let extrayendo: { documentId: string; promesa: Promise<"hecho" | "error"> } | null = null;
+type ResultadoExtraccion = "hecho" | "error" | "sin-pdf";
+let extrayendo: { documentId: string; promesa: Promise<ResultadoExtraccion> } | null = null;
 
 /**
  * Saca el texto de todas las páginas aquí mismo y lo manda al servidor.
@@ -380,20 +438,24 @@ let extrayendo: { documentId: string; promesa: Promise<"hecho" | "error"> } | nu
  * el servidor no tiene que abrirlo. Usa exactamente el mismo código que el
  * servidor (src/lib/pdf/lineas.ts): el resultado es idéntico.
  */
-export function extraerEnDispositivo(documentId: string): Promise<"hecho" | "error"> {
+export function extraerEnDispositivo(
+  documentId: string,
+  soloDispositivo = false,
+): Promise<ResultadoExtraccion> {
   if (extrayendo?.documentId === documentId) return extrayendo.promesa;
-  const promesa = extraer(documentId).finally(() => {
+  const promesa = extraer(documentId, soloDispositivo).finally(() => {
     extrayendo = null;
   });
   extrayendo = { documentId, promesa };
   return promesa;
 }
 
-async function extraer(documentId: string): Promise<"hecho" | "error"> {
+async function extraer(documentId: string, soloDispositivo: boolean): Promise<ResultadoExtraccion> {
   let doc: PdfDoc;
   try {
-    doc = await abrirPdf(documentId);
-  } catch {
+    doc = await abrirPdf(documentId, soloDispositivo);
+  } catch (error) {
+    if (error instanceof SinPdfLocal) return "sin-pdf";
     // Protegido, dañado o sin motor: lo hará el servidor, que da el error claro.
     return "error";
   }
@@ -447,7 +509,11 @@ async function extraer(documentId: string): Promise<"hecho" | "error"> {
  * de todas las páginas (segundos) y en seguida las escaneadas. Empieza
  * mientras el PDF aún se está subiendo.
  */
-export async function procesarEnDispositivo(documentId: string, cancelado?: () => boolean) {
-  if ((await extraerEnDispositivo(documentId)) !== "hecho" || cancelado?.()) return;
-  await leerEnDispositivo(documentId, { cancelado });
+export async function procesarEnDispositivo(
+  documentId: string,
+  cancelado?: () => boolean,
+  soloDispositivo = false,
+) {
+  if ((await extraerEnDispositivo(documentId, soloDispositivo)) !== "hecho" || cancelado?.()) return;
+  await leerEnDispositivo(documentId, { cancelado, soloDispositivo });
 }

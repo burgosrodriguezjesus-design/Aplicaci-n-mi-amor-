@@ -12,7 +12,7 @@
  * Es seguro llamarla de más: si no hay nada que hacer, termina enseguida.
  */
 import { api } from "./api";
-import { extraerEnDispositivo, leerEnDispositivo } from "./ocr-dispositivo";
+import { extraerEnDispositivo, leerEnDispositivo, tienePdfLocal } from "./ocr-dispositivo";
 
 type RespuestaOcr = {
   pending: boolean;
@@ -20,6 +20,8 @@ type RespuestaOcr = {
   documentId?: string | null;
   /** Documento al que le falta el texto: lo saca este dispositivo. */
   extraer?: string | null;
+  /** Su PDF no está en el servidor: solo lo puede leer el dispositivo que lo tiene. */
+  soloDispositivo?: boolean;
 };
 
 /** Si el dispositivo no puede leer, el servidor lo intenta como último recurso. */
@@ -71,14 +73,24 @@ async function vigilar(sigue: () => boolean, cancelado?: () => boolean) {
         const respuesta = await api.post<RespuestaOcr>("/api/jobs/ocr", {
           servidor: servidorComoRespaldo,
         });
+        const doc = respuesta.extraer ?? respuesta.documentId;
+        if (doc && respuesta.soloDispositivo && !(await tienePdfLocal(doc))) {
+          // Es un PDF grande guardado en otro dispositivo: desde aquí no se
+          // puede leer. Se vuelve a mirar dentro de un rato.
+          await esperar(30_000);
+          continue;
+        }
         if (respuesta.extraer) {
           // Primero el texto de todas las páginas (segundos), luego las escaneadas.
-          await extraerEnDispositivo(respuesta.extraer);
+          await extraerEnDispositivo(respuesta.extraer, respuesta.soloDispositivo === true);
           continue;
         }
         if (respuesta.pending && respuesta.enDispositivo && respuesta.documentId) {
           // Las lee este mismo dispositivo: más rápido y sin depender del servidor.
-          const resultado = await leerEnDispositivo(respuesta.documentId, { cancelado });
+          const resultado = await leerEnDispositivo(respuesta.documentId, {
+            cancelado,
+            soloDispositivo: respuesta.soloDispositivo === true,
+          });
           if (resultado === "sin-motor") servidorComoRespaldo = true;
           continue;
         }

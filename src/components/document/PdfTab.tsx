@@ -12,17 +12,21 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { descargarPdf } from "@/lib/client/pdf";
+import { guardarPdfLocal, pdfLocal } from "@/lib/client/pdf-local";
 
 export function PdfTab({
   documentId,
   page,
   pageCount,
   onPageChange,
+  enDispositivo = false,
 }: {
   documentId: string;
   page: number;
   pageCount: number;
   onPageChange: (page: number) => void;
+  /** El PDF no está en el servidor: solo en el dispositivo que lo subió. */
+  enDispositivo?: boolean;
 }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,7 +42,17 @@ export function PdfTab({
     setError(null);
     setPercent(0);
     setLoading(true);
-    descargarPdf(documentId, setPercent, control.signal)
+    // Primero el que haya en este dispositivo (al instante); si no, del servidor.
+    pdfLocal(documentId)
+      .then((local) => {
+        if (local) return local;
+        if (enDispositivo) {
+          throw new Error(
+            "Este PDF es grande y se guardó solo en el dispositivo desde el que lo subiste. Ábrelo allí, o elige aquí el mismo archivo para verlo.",
+          );
+        }
+        return descargarPdf(documentId, setPercent, control.signal);
+      })
       .then((blob) => {
         url = URL.createObjectURL(blob);
         setPdfUrl(url);
@@ -51,7 +65,7 @@ export function PdfTab({
       control.abort();
       if (url) URL.revokeObjectURL(url);
     };
-  }, [documentId, attempt]);
+  }, [documentId, attempt, enDispositivo]);
 
   // Cambiar el hash obliga al visor a saltar de página.
   useEffect(() => {
@@ -115,13 +129,30 @@ export function PdfTab({
         {error ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
             <p className="text-sm">{error}</p>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => setAttempt((value) => value + 1)}
-            >
-              Reintentar
-            </button>
+            {enDispositivo ? (
+              <label className="btn btn-secondary cursor-pointer">
+                Elegir el PDF
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  className="hidden"
+                  onChange={async (event) => {
+                    const elegido = event.target.files?.[0];
+                    if (!elegido) return;
+                    await guardarPdfLocal(documentId, elegido).catch(() => undefined);
+                    setAttempt((value) => value + 1);
+                  }}
+                />
+              </label>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setAttempt((value) => value + 1)}
+              >
+                Reintentar
+              </button>
+            )}
           </div>
         ) : null}
         <iframe

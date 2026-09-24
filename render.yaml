@@ -60,10 +60,8 @@ services:
       - key: AI_CONCURRENCY
         value: "2"
       - key: MAX_UPLOAD_MB
-        value: "60"
+        value: "400"
       - key: MAX_PDF_PAGES
         value: "1500"
-      # Por pasada. Si un libro tiene más páginas escaneadas, se vuelve a
-      # procesar y sigue por donde iba: lo reconocido no se pierde.
       - key: OCR_MAX_PAGES
-        value: "150"
+        value: "1500"

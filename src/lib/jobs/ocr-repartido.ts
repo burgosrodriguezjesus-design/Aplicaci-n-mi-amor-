@@ -83,10 +83,11 @@ export async function documentoConOcrLibre(userId: string) {
       ...libre(),
     },
     select: {
-      document: { select: { id: true, storageKey: true, sizeBytes: true } },
+      document: { select: { id: true, storageKey: true, sizeBytes: true, pdfEnDispositivo: true } },
     },
   });
-  return pagina?.document ?? null;
+  // Un PDF que está en el dispositivo no lo puede leer el servidor.
+  return pagina?.document && !pagina.document.pdfEnDispositivo ? pagina.document : null;
 }
 
 /** El documento de este usuario con paginas por leer (libres o no). */
@@ -97,7 +98,7 @@ export async function documentoConOcrPendiente(userId: string) {
       ocrIntentos: { lt: MAX_INTENTOS },
       document: { userId, status: { notIn: ["READY", "FAILED", "UPLOADING"] } },
     },
-    select: { document: { select: { id: true } } },
+    select: { document: { select: { id: true, pdfEnDispositivo: true } } },
   });
   return pagina?.document ?? null;
 }
@@ -109,12 +110,17 @@ export async function documentoConOcrPendiente(userId: string) {
 export async function documentoPorExtraer(userId: string) {
   const enMarcha = await prisma.document.findMany({
     where: { userId, status: { in: ["UPLOADED", "QUEUED", "EXTRACTING"] } },
-    select: { id: true, pageCount: true, _count: { select: { pages: true } } },
+    select: {
+      id: true,
+      pageCount: true,
+      pdfEnDispositivo: true,
+      _count: { select: { pages: true } },
+    },
     orderBy: { createdAt: "desc" },
     take: 5,
   });
   const falta = enMarcha.find((d) => d.pageCount === 0 || d._count.pages !== d.pageCount);
-  return falta?.id ?? null;
+  return falta ? { id: falta.id, soloDispositivo: falta.pdfEnDispositivo } : null;
 }
 
 /** Reclama hasta `cuantas` paginas libres. Devuelve las que se han conseguido. */

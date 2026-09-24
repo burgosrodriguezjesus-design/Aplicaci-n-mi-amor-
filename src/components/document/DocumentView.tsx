@@ -398,6 +398,7 @@ export function DocumentView({ documentId }: { documentId: string }) {
         {tab === "pdf" ? (
           <PdfTab
             documentId={documentId}
+            enDispositivo={detail.document.pdfEnDispositivo === true}
             page={page}
             pageCount={document_.pageCount}
             onPageChange={setPage}

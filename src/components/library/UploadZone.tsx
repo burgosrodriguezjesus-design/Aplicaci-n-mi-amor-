@@ -9,8 +9,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, uploadDocument, type UploadHandle } from "@/lib/client/api";
+import { borrarPdfLocal } from "@/lib/client/pdf-local";
 import { empujarTrabajo } from "@/lib/client/jobs";
-import { procesarEnDispositivo, recordarPdfLocal } from "@/lib/client/ocr-dispositivo";
+import {
+  conservarPdfLocal,
+  procesarEnDispositivo,
+  recordarPdfLocal,
+} from "@/lib/client/ocr-dispositivo";
 import {
   DEPTH_OPTIONS,
   LEVEL_OPTIONS,
@@ -142,6 +147,8 @@ export function UploadZone() {
     setUploadPercent(0);
     setError(null);
 
+    // Por encima del umbral, el PDF se queda en el dispositivo.
+    const grande = file.size > capabilities.maxServidorMb * 1024 * 1024;
     const handle = uploadDocument(
       file,
       {
@@ -152,12 +159,20 @@ export function UploadZone() {
         topicId,
       },
       setUploadPercent,
-      (nuevoId) => {
+      (nuevoId, soloDispositivo) => {
         // El dispositivo empieza a sacar el texto y a leer las escaneadas
         // ya, mientras el PDF sube: la subida no hace esperar a la lectura.
-        recordarPdfLocal(nuevoId, file);
-        void procesarEnDispositivo(nuevoId, () => cancelledRef.current);
+        void (async () => {
+          if (soloDispositivo) {
+            // Los muy grandes se quedan guardados aquí (no se suben).
+            await conservarPdfLocal(nuevoId, file).catch(() => recordarPdfLocal(nuevoId, file));
+          } else {
+            recordarPdfLocal(nuevoId, file);
+          }
+          await procesarEnDispositivo(nuevoId, () => cancelledRef.current, soloDispositivo);
+        })();
       },
+      grande,
     );
     handleRef.current = handle;
 
@@ -200,6 +215,7 @@ export function UploadZone() {
   const removeDocument = async () => {
     if (!documentId) return;
     await api.delete(`/api/documents/${documentId}`).catch(() => undefined);
+    await borrarPdfLocal(documentId);
     reset();
   };
 
@@ -381,6 +397,17 @@ export function UploadZone() {
                   Modo sin IA activo: el resumen se construirá seleccionando frases del
                   propio PDF. Añade <code>ANTHROPIC_API_KEY</code> al servidor para obtener
                   explicaciones reescritas y adaptadas a tu nivel.
+                </p>
+              ) : null}
+              {file && file.size > capabilities.maxServidorMb * 1024 * 1024 ? (
+                <p
+                  className="rounded-[0.7rem] px-3 py-2 text-[0.8rem]"
+                  style={{ background: "var(--accent-soft)", color: "var(--text-soft)" }}
+                >
+                  Es un PDF grande ({formatBytes(file.size)}): no hace falta subirlo. Se
+                  guarda en este dispositivo y al servidor solo va el texto, así que
+                  empieza a leerse al momento. Para ver el PDF original, ábrelo desde
+                  este mismo dispositivo.
                 </p>
               ) : null}
             </section>

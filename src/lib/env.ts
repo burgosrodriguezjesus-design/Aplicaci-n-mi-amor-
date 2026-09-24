@@ -157,10 +157,16 @@ export const env = {
   },
 
   limits: {
-    maxUploadBytes: int("MAX_UPLOAD_MB", 80) * 1024 * 1024,
-    maxUploadMb: int("MAX_UPLOAD_MB", 80),
+    maxUploadBytes: int("MAX_UPLOAD_MB", 400) * 1024 * 1024,
+    maxUploadMb: int("MAX_UPLOAD_MB", 400),
     maxPages: int("MAX_PDF_PAGES", 1500),
-    ocrMaxPages: int("OCR_MAX_PAGES", 600),
+    ocrMaxPages: int("OCR_MAX_PAGES", 1500),
+    /**
+     * Por encima de esto, el PDF no se sube: se queda en el dispositivo y al
+     * servidor solo va el texto. La base de datos gratuita tiene ~500 MB en
+     * total; un libro de 300 MB la llenaría. Así además no hay que subirlo.
+     */
+    maxServidorMb: int("MAX_PDF_SERVIDOR_MB", 50),
   },
 } as const;
 
@@ -170,6 +176,7 @@ export function publicCapabilities() {
     aiEnabled: env.ai.enabled,
     serverTts: env.tts.provider !== "none",
     maxUploadMb: env.limits.maxUploadMb,
+    maxServidorMb: env.limits.maxServidorMb,
     maxPages: env.limits.maxPages,
   };
 }

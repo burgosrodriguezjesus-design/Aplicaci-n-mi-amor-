@@ -83,6 +83,7 @@ CREATE TABLE "Document" (
     "title" TEXT NOT NULL,
     "originalName" TEXT NOT NULL,
     "storageKey" TEXT NOT NULL,
+    "pdfEnDispositivo" BOOLEAN NOT NULL DEFAULT false,
     "mimeType" TEXT NOT NULL DEFAULT 'application/pdf',
     "sizeBytes" INTEGER NOT NULL,
     "pageCount" INTEGER NOT NULL DEFAULT 0,

@@ -100,6 +100,8 @@ async function extractPages(
   jobId: string,
   cargarPdf: CargarPdf,
   deadline: number,
+  /** ¿Lee el servidor las escaneadas? (no si el PDF está en el dispositivo) */
+  servidorLee: boolean,
 ) {
   if (!(await extraccionCompleta(documentId))) {
     await setStatus(documentId, jobId, "EXTRACTING", "Extrayendo contenido…", 8);
@@ -144,7 +146,7 @@ async function extractPages(
   });
   const pageCount = guardado?.pageCount ?? 0;
 
-  if (ocrEnServidor() && ocrAvailable() && (await contarPendientes(documentId)) > 0) {
+  if (servidorLee && ocrAvailable() && (await contarPendientes(documentId)) > 0) {
     await setStatus(
       documentId,
       jobId,
@@ -181,7 +183,7 @@ async function extractPages(
   // Quedan paginas por leer: esto sigue en la siguiente ronda.
   // (Si las lee el dispositivo, quedan pendientes hasta que las mande.)
   const ocrPendiente =
-    (ocrEnServidor() ? ocrAvailable() : true) && (await contarPendientes(documentId)) > 0;
+    (servidorLee ? ocrAvailable() : true) && (await contarPendientes(documentId)) > 0;
   if (ocrPendiente) {
     return { pages, pageCount, coverage, linesByPage: new Map<number, PageLine[]>(), ocrPendiente };
   }
@@ -189,7 +191,7 @@ async function extractPages(
   if (withText === 0) {
     throw new ProcessingError(
       "NO_TEXT",
-      ocrAvailable() || !ocrEnServidor()
+      ocrAvailable() || !servidorLee
         ? "No hemos podido leer texto en este PDF. Parece un escaneo en el que no se distinguen las letras: prueba con un escaneo más nítido y recto."
         : "No hemos podido leer este PDF escaneado porque la lectura de imágenes no está disponible ahora mismo en el servidor. Vuelve a intentarlo en unos minutos.",
     );
@@ -495,6 +497,14 @@ async function handleProcessDocument(job: {
   const document = await prisma.document.findUnique({ where: { id: job.documentId } });
   if (!document) throw new ProcessingError("NOT_FOUND", "El documento ya no existe.");
 
+  // El PDF está en el dispositivo (los muy grandes no se suben): el servidor
+  // no puede abrirlo, así que espera a que el dispositivo mande el texto.
+  const servidorLee = ocrEnServidor() && !document.pdfEnDispositivo;
+  if (document.pdfEnDispositivo && !(await extraccionCompleta(document.id))) {
+    await new Promise((listo) => setTimeout(listo, 3000));
+    return { pending: true, message: "Leyendo el PDF en tu dispositivo…" };
+  }
+
   // El dispositivo que acaba de subir el PDF está sacando el texto: se le
   // deja un rato antes de que el servidor lo haga él (y abra 60 MB).
   const dispositivoHasta = Number(job.payload?.dispositivoHasta ?? 0);
@@ -505,7 +515,7 @@ async function handleProcessDocument(job: {
 
   // Las páginas escaneadas las está leyendo el dispositivo: no hace falta
   // traer el PDF solo para decir que aún no ha terminado.
-  if (!ocrEnServidor() && (await esperandoAlDispositivo(document.id))) {
+  if (!servidorLee && (await esperandoAlDispositivo(document.id))) {
     await new Promise((listo) => setTimeout(listo, 3000));
     return { pending: true, message: "Leyendo las páginas escaneadas en tu dispositivo…" };
   }
@@ -535,7 +545,7 @@ async function handleProcessDocument(job: {
 
   let extracted;
   try {
-    extracted = await extractPages(job.documentId, job.id, cargarPdf, job.deadline);
+    extracted = await extractPages(job.documentId, job.id, cargarPdf, job.deadline, servidorLee);
   } catch (error) {
     if (error instanceof PdfProtectedError) {
       throw new ProcessingError(

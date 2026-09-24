@@ -140,7 +140,9 @@ export function uploadDocument(
   fields: Record<string, string>,
   onProgress: (percent: number) => void,
   /** En cuanto existe el documento (al empezar), para ir leyéndolo a la vez. */
-  onInicio?: (documentId: string) => void,
+  onInicio?: (documentId: string, soloDispositivo: boolean) => void,
+  /** El PDF no se sube: se queda en el dispositivo y solo va el texto. */
+  soloDispositivo = false,
 ): UploadHandle {
   let actual: XMLHttpRequest | null = null;
   let cancelada = false;
@@ -152,6 +154,20 @@ export function uploadDocument(
 
   empiezaSubida();
   const promise = (async () => {
+    if (soloDispositivo) {
+      const inicio = await enviar(
+        "POST",
+        "/api/uploads",
+        JSON.stringify({ name: file.name, size: file.size, soloDispositivo: true, ...campos }),
+        null,
+        registrar,
+      );
+      const documentId = String(inicio.documentId);
+      onInicio?.(documentId, true);
+      onProgress(100);
+      return { document: { id: documentId, title: file.name } };
+    }
+
     const inicio = await enviar(
       "POST",
       "/api/uploads",
@@ -164,7 +180,7 @@ export function uploadDocument(
     const partes = Number(inicio.parts);
     const documentId = String(inicio.documentId ?? "");
     subida = { id: uploadId, partes, documentId };
-    if (documentId) onInicio?.(documentId);
+    if (documentId) onInicio?.(documentId, false);
 
     let enviados = 0;
     for (let parte = 0; parte < partes; parte++) {

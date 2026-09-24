@@ -41,11 +41,22 @@ export const POST = route(async (request: Request) => {
   // dispositivo (en segundos, sin que el servidor abra el PDF).
   const extraer = await documentoPorExtraer(user.id);
   if (extraer && !forzar) {
-    return ok({ pending: true, enDispositivo: true, extraer, documentId: null });
+    return ok({
+      pending: true,
+      enDispositivo: true,
+      extraer: extraer.id,
+      soloDispositivo: extraer.soloDispositivo,
+      documentId: null,
+    });
+  }
+
+  // Si el PDF está en el dispositivo, solo el dispositivo puede leerlo.
+  const pendiente = await documentoConOcrPendiente(user.id);
+  if (pendiente?.pdfEnDispositivo) {
+    return ok({ pending: true, enDispositivo: true, soloDispositivo: true, documentId: pendiente.id });
   }
 
   if (!ocrEnServidor() && !forzar) {
-    const pendiente = await documentoConOcrPendiente(user.id);
     return ok({
       pending: pendiente !== null,
       enDispositivo: true,

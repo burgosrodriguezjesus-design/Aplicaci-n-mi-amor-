@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { api } from "@/lib/client/api";
+import { borrarPdfLocal } from "@/lib/client/pdf-local";
 import type { DocumentListItem, Subject } from "@/lib/client/types";
 import { Icon } from "@/components/ui/Icon";
 import { CardSkeleton, EmptyState, Modal } from "@/components/ui/Primitives";
@@ -92,6 +93,7 @@ export function LibraryView() {
     setDocuments((current) => current?.filter((item) => item.id !== target.id) ?? null);
     try {
       await api.delete(`/api/documents/${target.id}`);
+      await borrarPdfLocal(target.id);
       toast({ title: "Documento eliminado", variant: "success" });
       void loadSubjects();
     } catch {

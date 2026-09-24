@@ -108,12 +108,15 @@ model Document {
   originalName  String
   /// Clave en el almacenamiento (local o S3). Nunca es una ruta publica.
   storageKey    String
+  /// El PDF original se queda en el dispositivo que lo subió (los muy
+  /// grandes): al servidor solo llega el texto. Ver MAX_PDF_SERVIDOR_MB.
+  pdfEnDispositivo Boolean @default(false)
   mimeType      String  @default("application/pdf")
   sizeBytes     Int
   pageCount     Int     @default(0)
   checksum      String?
 
-  /// UPLOADED | EXTRACTING | ANALYZING | SUMMARIZING | OUTLINING | NARRATING | READY | FAILED
+  /// UPLOADING | UPLOADED | EXTRACTING | ANALYZING | SUMMARIZING | OUTLINING | NARRATING | READY | FAILED
   status        String  @default("UPLOADED")
   statusMessage String  @default("Subiendo PDF…")
   progress      Int     @default(0)

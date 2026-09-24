@@ -41,10 +41,17 @@ export const GET = route(
 
     const document = await prisma.document.findFirst({
       where: { id, userId: user.id },
-      select: { storageKey: true, originalName: true, sizeBytes: true },
+      select: { storageKey: true, originalName: true, sizeBytes: true, pdfEnDispositivo: true },
     });
     if (!document) return fail("No encontramos ese documento.", 404, "NOT_FOUND");
 
+    if (document.pdfEnDispositivo) {
+      return fail(
+        "Este PDF es muy grande y se guarda solo en el dispositivo desde el que lo subiste.",
+        404,
+        "PDF_EN_DISPOSITIVO",
+      );
+    }
     if (!(await storage.exists(document.storageKey))) {
       return fail("El fichero original ya no está disponible.", 410, "FILE_MISSING");
     }

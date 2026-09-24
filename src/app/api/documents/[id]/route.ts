@@ -56,6 +56,7 @@ export const GET = route(async (_request: Request, { params }: Params) => {
       errorMessage: document.errorMessage,
       textCoverage: document.textCoverage,
       usedOcr: document.usedOcr,
+      pdfEnDispositivo: document.pdfEnDispositivo,
       summaryDepth: document.summaryDepth,
       educationLevel: document.educationLevel,
       explanationStyle: document.explanationStyle,

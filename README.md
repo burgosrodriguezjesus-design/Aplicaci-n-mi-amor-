@@ -217,7 +217,8 @@ nunca al navegador.
 | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` | Si usas ElevenLabs | Síntesis de voz en el servidor. |
 | `STORAGE_DRIVER`, `STORAGE_DIR` | No | Dónde se guardan PDFs y audios (por defecto `./storage`, fuera de `public/`). |
 | `AI_CONCURRENCY` | No | Fragmentos analizados en paralelo (4 por defecto). |
-| `MAX_UPLOAD_MB`, `MAX_PDF_PAGES` | No | Límites de subida (80 MB y 1500 páginas por defecto). |
+| `MAX_UPLOAD_MB`, `MAX_PDF_PAGES` | No | Límites de subida (400 MB y 1500 páginas por defecto). |
+| `MAX_PDF_SERVIDOR_MB` | No | Por encima de este tamaño (50 MB por defecto) el PDF no se sube: se queda en el dispositivo y al servidor solo va el texto. |
 | `OCR_PROVIDER` | No | `tesseract` (local, sin claves), `anthropic` (visión) o `none`. Por defecto usa el local si está y si no la visión. |
 | `OCR_LANGS`, `OCR_LANG_PATH` | No | Idiomas del OCR local (`spa` por defecto) y carpeta con sus datos. |
 | `OCR_MAX_PAGES` | No | Tope de páginas escaneadas a las que se aplica OCR (600). |
