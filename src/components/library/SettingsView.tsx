@@ -155,7 +155,7 @@ export function SettingsView() {
       <section className="card space-y-3 p-5">
         <h2 className="text-sm font-semibold">Aplicación</h2>
         <p className="text-[0.85rem]" style={{ color: "var(--text-soft)" }}>
-          Puedes instalar EstudIA en tu móvil como una aplicación más y abrirla desde la
+          Puedes instalar alicIA en tu móvil como una aplicación más y abrirla desde la
           pantalla de inicio.
         </p>
         {installable ? (

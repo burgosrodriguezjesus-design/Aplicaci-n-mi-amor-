@@ -1,4 +1,4 @@
-# EstudIA
+# alicIA
 
 Aplicación web que convierte un PDF de clase (temario, apuntes, un capítulo de
 un libro) en tres recursos de estudio independientes:

@@ -43,7 +43,7 @@ async function call(path, options = {}) {
   return { status: response.status, body };
 }
 
-console.log(`\nEstudIA · prueba de humo contra ${BASE}\n`);
+console.log(`\nalicIA · prueba de humo contra ${BASE}\n`);
 
 // 1. Registro
 const email = `smoke-${randomUUID().slice(0, 8)}@estudia.test`;

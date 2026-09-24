@@ -1,6 +1,6 @@
 {
-  "name": "EstudIA · estudio con PDF",
-  "short_name": "EstudIA",
+  "name": "alicIA · estudio con PDF",
+  "short_name": "alicIA",
   "description": "Convierte tus PDF de clase en resumen, esquema y audiolibro.",
   "id": "/inicio",
   "start_url": "/inicio",

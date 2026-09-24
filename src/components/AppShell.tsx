@@ -32,15 +32,11 @@ const NAV = [
 
 function Logo({ compact = false }: { compact?: boolean }) {
   return (
-    <Link href="/inicio" className="flex items-center gap-2" aria-label="EstudIA, ir al inicio">
-      <span
-        className="flex h-8 w-8 items-center justify-center rounded-[0.65rem] text-sm font-bold"
-        style={{ background: "var(--accent)", color: "var(--accent-text)" }}
-      >
-        E
-      </span>
+    <Link href="/inicio" className="flex items-center gap-2" aria-label="alicIA, ir al inicio">
+      {/* eslint-disable-next-line @next/next/no-img-element -- icono SVG fijo */}
+      <img src="/icon.svg" alt="" width={32} height={32} className="h-8 w-8" />
       {!compact ? (
-        <span className="text-[0.98rem] font-semibold tracking-tight">EstudIA</span>
+        <span className="text-[0.98rem] font-semibold tracking-tight">alicIA</span>
       ) : null}
     </Link>
   );

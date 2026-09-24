@@ -1,4 +1,4 @@
-// Modelo de datos de EstudIA.
+// Modelo de datos de alicIA.
 // Base de datos por defecto: SQLite (cero configuracion).
 // Para produccion basta cambiar `provider` a "postgresql" y DATABASE_URL.
 

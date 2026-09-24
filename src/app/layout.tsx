@@ -6,14 +6,14 @@ import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 
 export const metadata: Metadata = {
   title: {
-    default: "EstudIA · convierte tus PDF en material de estudio",
-    template: "%s · EstudIA",
+    default: "alicIA · convierte tus PDF en material de estudio",
+    template: "%s · alicIA",
   },
   description:
     "Sube tus apuntes en PDF y obtén automáticamente un resumen completo, un esquema de estudio y un audiolibro fiel al documento original.",
-  applicationName: "EstudIA",
+  applicationName: "alicIA",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, title: "EstudIA", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "alicIA", statusBarStyle: "default" },
   formatDetection: { telephone: false },
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],

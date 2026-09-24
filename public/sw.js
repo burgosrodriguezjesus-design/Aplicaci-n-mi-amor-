@@ -1,5 +1,5 @@
 /**
- * Service worker de EstudIA.
+ * Service worker de alicIA.
  *
  * Estrategias:
  *  - Navegaciones: red primero con respaldo en caché (para que la aplicación
@@ -11,7 +11,7 @@
  *    mensaje `CACHE_AUDIO`, nunca de forma automática.
  */
 
-const VERSION = "v3";
+const VERSION = "v4";
 const SHELL_CACHE = `estudia-shell-${VERSION}`;
 const STATIC_CACHE = `estudia-static-${VERSION}`;
 const AUDIO_CACHE = `estudia-audio-${VERSION}`;

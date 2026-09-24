@@ -48,13 +48,9 @@ export default async function LandingPage() {
     <div className="min-h-dvh">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-5 py-5">
         <div className="flex items-center gap-2">
-          <span
-            className="flex h-8 w-8 items-center justify-center rounded-[0.65rem] text-sm font-bold"
-            style={{ background: "var(--accent)", color: "var(--accent-text)" }}
-          >
-            E
-          </span>
-          <span className="text-[0.98rem] font-semibold tracking-tight">EstudIA</span>
+          {/* eslint-disable-next-line @next/next/no-img-element -- icono SVG fijo */}
+          <img src="/icon.svg" alt="" width={32} height={32} className="h-8 w-8" />
+          <span className="text-[0.98rem] font-semibold tracking-tight">alicIA</span>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/login" className="btn btn-ghost">

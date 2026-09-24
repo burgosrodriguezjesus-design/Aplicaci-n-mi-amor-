@@ -1,6 +1,6 @@
-# Convertir EstudIA en una aplicación
+# Convertir alicIA en una aplicación
 
-El objetivo: **un icono en la pantalla de inicio de tu móvil** que abra EstudIA
+El objetivo: **un icono en la pantalla de inicio de tu móvil** que abra alicIA
 a pantalla completa, con tu cuenta, tu biblioteca y tu progreso. Sin tienda de
 aplicaciones y sin esperar a que nadie la apruebe.
 

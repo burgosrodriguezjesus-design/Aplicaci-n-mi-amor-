@@ -1,4 +1,4 @@
-# Imagen lista para probar EstudIA con un solo comando.
+# Imagen lista para probar alicIA con un solo comando.
 # Usa Debian (no Alpine) porque el rasterizado de páginas escaneadas
 # depende de un binario nativo compilado contra glibc.
 FROM node:22-slim

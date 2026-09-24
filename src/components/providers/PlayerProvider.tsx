@@ -493,7 +493,7 @@ export function PlayerProvider({
     navigator.mediaSession.metadata = new MediaMetadata({
       title: track.title,
       artist: queue.documentTitle,
-      album: "EstudIA",
+      album: "alicIA",
     });
     navigator.mediaSession.playbackState = isPlaying ? "playing" : "paused";
 

@@ -22,5 +22,5 @@ PRISMA_SCHEMA_QUIET=1 node scripts/prisma-schema.mjs
 npx prisma generate --schema=prisma/schema.runtime.prisma >/dev/null
 npx prisma db push --schema=prisma/schema.runtime.prisma --skip-generate >/dev/null
 
-echo "EstudIA listo en http://localhost:3000"
+echo "alicIA listo en http://localhost:3000"
 exec "$@"

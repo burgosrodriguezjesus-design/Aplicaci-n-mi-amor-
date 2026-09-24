@@ -50,7 +50,7 @@ const plano = await browser.newContext();
 const suelta = await plano.newPage();
 const manifiesto = await (await suelta.goto(base + "/manifest.webmanifest")).json();
 comprobar("el manifiesto declara nombre y arranque",
-  manifiesto.name.includes("EstudIA") && manifiesto.start_url === "/inicio");
+  manifiesto.name.includes("alicIA") && manifiesto.start_url === "/inicio");
 comprobar("se abre a pantalla completa", manifiesto.display === "standalone");
 comprobar("trae icono normal y enmascarable",
   manifiesto.icons.some((i) => i.purpose === "any") &&
@@ -66,19 +66,19 @@ await plano.close();
 // ── 2. En un iPhone se explica cómo instalarla (Safari no lo ofrece solo)
 const iphone = await browser.newContext({ ...devices["iPhone 13"] });
 const movil = await entrar(iphone);
-await movil.waitForSelector('[aria-label="Instalar EstudIA"]', { timeout: 20000 });
-const texto = await movil.textContent('[aria-label="Instalar EstudIA"]');
+await movil.waitForSelector('[aria-label="Instalar alicIA"]', { timeout: 20000 });
+const texto = await movil.textContent('[aria-label="Instalar alicIA"]');
 comprobar("en iPhone se explica dónde tocar",
   texto.includes("Compartir") && texto.includes("pantalla de inicio"));
 comprobar("en iPhone no se enseña un botón de instalar que no existe",
-  !(await movil.isVisible('[aria-label="Instalar EstudIA"] button:text-is("Instalar")')));
+  !(await movil.isVisible('[aria-label="Instalar alicIA"] button:text-is("Instalar")')));
 
-await movil.click('[aria-label="Instalar EstudIA"] button:text-is("Ahora no")');
-comprobar("se puede descartar", !(await movil.isVisible('[aria-label="Instalar EstudIA"]')));
+await movil.click('[aria-label="Instalar alicIA"] button:text-is("Ahora no")');
+comprobar("se puede descartar", !(await movil.isVisible('[aria-label="Instalar alicIA"]')));
 await movil.reload();
 await movil.waitForSelector("text=Buenos días,text=Buenas tardes,text=Buenas noches", { timeout: 20000 }).catch(() => null);
 comprobar("descartado no vuelve a aparecer",
-  !(await movil.isVisible('[aria-label="Instalar EstudIA"]')));
+  !(await movil.isVisible('[aria-label="Instalar alicIA"]')));
 await iphone.close();
 
 // ── 3. Instalada de verdad, el aviso desaparece
@@ -92,7 +92,7 @@ await instalada.addInitScript(() => {
 const dentro = await entrar(instalada);
 await dentro.waitForTimeout(1500);
 comprobar("ya instalada no se ofrece instalar",
-  !(await dentro.isVisible('[aria-label="Instalar EstudIA"]')));
+  !(await dentro.isVisible('[aria-label="Instalar alicIA"]')));
 await instalada.close();
 
 await browser.close();

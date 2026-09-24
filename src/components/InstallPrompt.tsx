@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "./ui/Icon";
 
 /**
- * Invitacion a instalar EstudIA como aplicacion.
+ * Invitacion a instalar alicIA como aplicacion.
  *
  * Hay dos caminos y no se parecen en nada:
  *  - Android y escritorio avisan con `beforeinstallprompt` y basta con un boton.
@@ -95,7 +95,7 @@ export function InstallPrompt() {
       className="fixed inset-x-0 z-40 px-4"
       style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 5.5rem)" }}
       role="complementary"
-      aria-label="Instalar EstudIA"
+      aria-label="Instalar alicIA"
     >
       <div
         className="mx-auto flex max-w-xl items-start gap-3 rounded-2xl border p-3 shadow-lg"
@@ -114,7 +114,7 @@ export function InstallPrompt() {
         </span>
 
         <div className="min-w-0 flex-1">
-          <p className="text-[0.92rem] font-semibold">Ten EstudIA a mano</p>
+          <p className="text-[0.92rem] font-semibold">Ten alicIA a mano</p>
           {instrucciones ? (
             <p className="mt-0.5 text-[0.82rem]" style={{ color: "var(--text-soft)" }}>
               Toca <strong>Compartir</strong> abajo y luego{" "}

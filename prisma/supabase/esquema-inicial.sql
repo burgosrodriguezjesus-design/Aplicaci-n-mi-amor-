@@ -1,4 +1,4 @@
--- Esquema inicial de EstudIA para Supabase (PostgreSQL).
+-- Esquema inicial de alicIA para Supabase (PostgreSQL).
 --
 -- Es exactamente lo que crearia `prisma db push`, mas una cosa que Prisma no
 -- hace y en Supabase es imprescindible: activar RLS en todas las tablas.
