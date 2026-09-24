@@ -9,13 +9,14 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { fail, ok, route } from "@/lib/api";
 import { ensureWorker, enqueue } from "@/lib/jobs";
+import { asegurarCola, origenDe } from "@/lib/jobs/impulso";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Contexto = { params: Promise<{ id: string }> };
 
-export const POST = route(async (_request: Request, { params }: Contexto) => {
+export const POST = route(async (request: Request, { params }: Contexto) => {
   const user = await requireUser();
   const { id } = await params;
   const documento = await prisma.document.findFirst({
@@ -45,5 +46,6 @@ export const POST = route(async (_request: Request, { params }: Contexto) => {
   });
   await ensureWorker();
   await enqueue(id, "PROCESS_DOCUMENT");
+  await asegurarCola(origenDe(request)).catch(() => undefined);
   return ok({ queued: true, pendientes: count });
 });

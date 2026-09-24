@@ -26,7 +26,7 @@ const ficheros = [
     nm("tesseract.js-core", "tesseract-core-relaxedsimd-lstm.wasm.js"),
     "core/tesseract-core-relaxedsimd-lstm.wasm.js",
   ],
-  [path.join(raiz, "assets", "ocr", "spa-fast.traineddata.gz"), "rapido/spa.traineddata.gz"],
+  [path.join(raiz, "assets", "ocr", "rapido", "spa.traineddata.gz"), "rapido/spa.traineddata.gz"],
   [
     nm("@tesseract.js-data", "spa", "4.0.0_best_int", "spa.traineddata.gz"),
     "preciso/spa.traineddata.gz",

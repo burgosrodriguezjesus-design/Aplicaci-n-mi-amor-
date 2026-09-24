@@ -26,7 +26,7 @@ const MAX_AGE = 60 * 60 * 24 * 30; // 30 dias
  */
 let claveEnMemoria: Uint8Array | null = null;
 
-async function claveDeFirma(): Promise<Uint8Array> {
+export async function claveDeFirma(): Promise<Uint8Array> {
   if (claveEnMemoria) return claveEnMemoria;
 
   if (env.authSecret) {

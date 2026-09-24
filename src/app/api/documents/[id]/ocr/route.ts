@@ -16,6 +16,7 @@ import {
   reclamar,
   soltar,
 } from "@/lib/jobs/ocr-repartido";
+import { asegurarCola, origenDe } from "@/lib/jobs/impulso";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,15 +51,18 @@ export const POST = route(async (request: Request, { params }: Contexto) => {
 
   const cuerpo = cuerpoSchema.parse(await request.json());
 
+  // "d:" = lo está leyendo un dispositivo (el servidor usa "s:"): así el
+  // servidor sabe que no hace falta que lea él.
   if (cuerpo.accion === "reclamar") {
     const token = randomUUID();
-    const paginas = await reclamar(id, token, cuerpo.cuantas);
+    const paginas = await reclamar(id, `d:${token}`, cuerpo.cuantas);
     return ok({ token, paginas, ...(await progresoOcr(id)) });
   }
   if (cuerpo.accion === "guardar") {
-    const leidas = await guardarLecturas(id, cuerpo.token, cuerpo.lecturas);
+    const leidas = await guardarLecturas(id, `d:${cuerpo.token}`, cuerpo.lecturas);
+    await asegurarCola(origenDe(request)).catch(() => undefined);
     return ok({ leidas, ...(await progresoOcr(id)) });
   }
-  await soltar(id, cuerpo.token);
+  await soltar(id, `d:${cuerpo.token}`);
   return ok({ soltadas: true });
 });

@@ -6,6 +6,8 @@ export type Capabilities = {
   maxUploadMb: number;
   /** Por encima de esto el PDF se queda en el dispositivo. */
   maxServidorMb: number;
+  /** Por encima de esto el servidor borra el PDF al terminar: se guarda aquí. */
+  conservarServidorMb: number;
   maxPages: number;
 };
 

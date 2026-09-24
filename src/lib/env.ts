@@ -163,10 +163,17 @@ export const env = {
     ocrMaxPages: int("OCR_MAX_PAGES", 1500),
     /**
      * Por encima de esto, el PDF no se sube: se queda en el dispositivo y al
-     * servidor solo va el texto. La base de datos gratuita tiene ~500 MB en
-     * total; un libro de 300 MB la llenaría. Así además no hay que subirlo.
+     * servidor solo va el texto (necesita la app abierta para leerse). Por
+     * debajo se sube, y el servidor puede terminarlo con la app cerrada.
      */
-    maxServidorMb: int("MAX_PDF_SERVIDOR_MB", 50),
+    maxServidorMb: int("MAX_PDF_SERVIDOR_MB", 100),
+    /**
+     * Terminado un documento, el servidor conserva su PDF solo si pesa esto o
+     * menos (para verlo desde cualquier dispositivo). Los más grandes se
+     * borran: la base de datos gratuita tiene ~500 MB en total. El
+     * dispositivo que lo subió guarda su copia.
+     */
+    conservarServidorMb: int("CONSERVAR_PDF_SERVIDOR_MB", 20),
   },
 } as const;
 
@@ -177,6 +184,7 @@ export function publicCapabilities() {
     serverTts: env.tts.provider !== "none",
     maxUploadMb: env.limits.maxUploadMb,
     maxServidorMb: env.limits.maxServidorMb,
+    conservarServidorMb: env.limits.conservarServidorMb,
     maxPages: env.limits.maxPages,
   };
 }

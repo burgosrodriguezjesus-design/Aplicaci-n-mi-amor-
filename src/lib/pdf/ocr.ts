@@ -24,6 +24,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { cpus } from "node:os";
 import { env } from "../env";
+import { abrirParaImagenes, imagenDePagina, type DocumentoPdf } from "./imagen-pagina";
 
 const run = promisify(execFile);
 
@@ -198,6 +199,11 @@ async function ensureLanguageData(lang: string): Promise<string | null> {
   if (process.env.OCR_LANG_PATH) return process.env.OCR_LANG_PATH;
 
   const file = `${lang}.traineddata.gz`;
+
+  // 0. El modelo rápido que va con la aplicación (un 30 % más rápido, el
+  //    mismo acierto en escaneos normales; ver assets/ocr/LEEME.md).
+  const rapido = path.join(/*turbopackIgnore: true*/ process.cwd(), "assets", "ocr", "rapido");
+  if (existsSync(path.join(/*turbopackIgnore: true*/ rapido, file))) return rapido;
 
   // 1. Paquete de datos instalado (`npm install` lo trae para el español).
   const pkg = findPackageDir(`@tesseract.js-data/${lang}`);
@@ -387,6 +393,48 @@ export async function ocrPages(
   let done = 0;
   const workers: TesseractWorker[] = [];
 
+  // Las imágenes se sacan del propio PDF (JavaScript puro, sin dibujar la
+  // página en un proceso aparte, que es lo que fallaba en Vercel). Solo si
+  // eso no puede, se intenta dibujarla como antes.
+  const abierto: { doc: Promise<DocumentoPdf | null> | null } = { doc: null };
+  const documento = () =>
+    (abierto.doc ??= readFile(pdfPath)
+      .then((datos) => abrirParaImagenes(new Uint8Array(datos)))
+      .catch(() => null));
+  /** Páginas que se han mirado bien y no tienen ninguna foto: están vacías. */
+  const sinFoto = new Set<number>();
+  const imagenesDelLote = async (lote: number[]) => {
+    const imagenes = new Map<number, Buffer>();
+    const doc = await documento();
+    const sinImagen: number[] = [];
+    for (const numero of lote) {
+      let img: Buffer | null = null;
+      let mirada = false;
+      if (doc) {
+        try {
+          img = await imagenDePagina(doc, numero);
+          mirada = true;
+        } catch {
+          img = null;
+        }
+      }
+      if (img) imagenes.set(numero, img);
+      else {
+        sinImagen.push(numero);
+        if (mirada) sinFoto.add(numero);
+      }
+    }
+    // Página sin foto dentro (texto dibujado a trazos): donde se puede, se
+    // dibuja como antes.
+    if (sinImagen.length > 0 && !process.env.VERCEL) {
+      for (const [n, png] of await rasterizeBatch(pdfPath, sinImagen, scale)) {
+        imagenes.set(n, png);
+        sinFoto.delete(n);
+      }
+    }
+    return imagenes;
+  };
+
   const runLane = async () => {
     // Cada hilo tiene su propio motor local: compartir uno los serializaría.
     let worker: TesseractWorker | null = null;
@@ -401,7 +449,7 @@ export async function ocrPages(
       const batch = await siguienteLote();
       if (batch.length === 0) return;
 
-      const images = await rasterizeBatch(pdfPath, batch, scale);
+      const images = await imagenesDelLote(batch);
 
       for (const pageNumber of batch) {
         if (shouldStop?.()) return;
@@ -426,10 +474,12 @@ export async function ocrPages(
           } catch {
             /* página no transcribible: se deja vacía */
           }
-        } else {
+        } else if (!sinFoto.has(pageNumber)) {
+          // No se ha podido ni mirar la página: fallo del servidor.
           await onFallo?.(pageNumber);
           continue;
         }
+        // (Sin foto dentro: página vacía. Cuenta como leída, sin texto.)
         done += 1;
         await onTried?.(pageNumber);
         await onProgress?.(done, total || done);
@@ -445,6 +495,7 @@ export async function ocrPages(
     await Promise.all(Array.from({ length: lanes }, runLane));
   } finally {
     await Promise.all(workers.map((w) => w.terminate().catch(() => undefined)));
+    await (await abierto.doc)?.destroy().catch(() => undefined);
   }
 
   results.sort((a, b) => a.pageNumber - b.pageNumber);

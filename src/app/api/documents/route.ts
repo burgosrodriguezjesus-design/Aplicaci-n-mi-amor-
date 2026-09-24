@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { fail, ok, route } from "@/lib/api";
 import { env } from "@/lib/env";
 import { CAMPOS_DE_SUBIDA, recibirPdf } from "@/lib/documents/recibir";
+import { asegurarCola, origenDe } from "@/lib/jobs/impulso";
 
 export const runtime = "nodejs";
 // La subida puede tardar: nunca se cachea.
@@ -101,5 +102,8 @@ export const POST = route(async (request: Request) => {
   const campos: Record<string, unknown> = {};
   for (const nombre of CAMPOS_DE_SUBIDA) campos[nombre] = form.get(nombre) ?? undefined;
 
-  return recibirPdf(user.id, Buffer.from(await file.arrayBuffer()), file.name, campos);
+  const respuesta = await recibirPdf(user.id, Buffer.from(await file.arrayBuffer()), file.name, campos);
+  // A partir de aquí sigue solo aunque se cierre la app.
+  await asegurarCola(origenDe(request)).catch(() => undefined);
+  return respuesta;
 });

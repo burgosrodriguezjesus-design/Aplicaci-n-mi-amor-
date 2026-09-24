@@ -1,6 +1,6 @@
 # Modelo de lectura rápido (español)
 
-`spa-fast.traineddata.gz` es `spa.traineddata` de
+`rapido/spa.traineddata.gz` es `spa.traineddata` de
 [tesseract-ocr/tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast)
 (licencia Apache 2.0), comprimido con gzip.
 

@@ -25,6 +25,7 @@ import {
   type PageLine,
 } from "../pdf/extract";
 import { ocrAvailable } from "../pdf/ocr";
+import { storage } from "../storage";
 import { pdfEnDisco } from "../storage/en-disco";
 import { cerrarExtraccion, extraccionCompleta, guardarLote } from "../documents/paginas";
 import {
@@ -653,6 +654,23 @@ async function handleProcessDocument(job: {
     "¡Tu material de estudio está listo!",
     100,
   );
+  await soltarPdfGrande(job.documentId);
+}
+
+/**
+ * Terminado el documento, el servidor ya no necesita su PDF (el material
+ * está hecho). Si es grande, se borra para no llenar la base de datos
+ * gratuita; el dispositivo que lo subió conserva su copia para el visor.
+ */
+async function soltarPdfGrande(documentId: string) {
+  const documento = await prisma.document.findUnique({
+    where: { id: documentId },
+    select: { sizeBytes: true, storageKey: true, pdfEnDispositivo: true },
+  });
+  if (!documento || documento.pdfEnDispositivo) return;
+  if (documento.sizeBytes <= env.limits.conservarServidorMb * 1024 * 1024) return;
+  await storage.delete(documento.storageKey).catch(() => undefined);
+  await prisma.document.update({ where: { id: documentId }, data: { pdfEnDispositivo: true } });
 }
 
 registerHandler("PROCESS_DOCUMENT", handleProcessDocument);

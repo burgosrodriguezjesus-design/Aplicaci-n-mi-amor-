@@ -262,6 +262,22 @@ async function leer(
   let bloqueo: { release: () => Promise<void> } | null = null;
   const tokensAbiertos = new Set<string>();
 
+  // Al pasar a segundo plano el sistema congela la app: lo reservado se
+  // suelta ya (keepalive: la petición sale aunque se congele justo después)
+  // para que el servidor lo lea sin esperar a que caduque la reserva.
+  const alOcultar = () => {
+    if (document.visibilityState !== "hidden") return;
+    for (const token of tokensAbiertos) {
+      void fetch(`/api/documents/${documentId}/ocr`, {
+        method: "POST",
+        keepalive: true,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accion: "soltar", token }),
+      }).catch(() => undefined);
+    }
+  };
+  document.addEventListener("visibilitychange", alOcultar);
+
   try {
     // Pantalla encendida mientras lee (si el navegador lo permite).
     try {
@@ -409,6 +425,7 @@ async function leer(
     for (const token of porMandar.keys()) await mandar(token, true);
     return cancelado?.() ? "cancelado" : "hecho";
   } finally {
+    document.removeEventListener("visibilitychange", alOcultar);
     // Lo reservado y no leído queda libre para otro.
     for (const token of tokensAbiertos) {
       void api

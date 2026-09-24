@@ -52,6 +52,7 @@ const nextConfig: NextConfig = {
       // El idioma del reconocimiento. Sin el, habria que descargarlo en cada
       // arranque, y en un alojamiento sin disco no hay donde guardarlo.
       "./node_modules/@tesseract.js-data/spa/4.0.0_best_int/**",
+      "./assets/ocr/rapido/**",
       "./node_modules/@tesseract.js-data/spa/package.json",
       "./node_modules/pdfjs-dist/legacy/build/**",
     ],

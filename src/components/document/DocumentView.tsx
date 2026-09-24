@@ -326,8 +326,9 @@ export function DocumentView({ documentId }: { documentId: string }) {
             {document_.pageCount > 80
               ? `Son ${document_.pageCount} páginas: puede tardar unos minutos. `
               : ""}
-            Deja la aplicación abierta (puedes ir a otras pantallas). Si la cierras, se
-            pausa y sigue donde se quedó al volver.
+            {detail.document.pdfEnDispositivo
+              ? "Deja la app abierta mientras se lee: este PDF solo está en tu dispositivo."
+              : "Puedes cerrar la app: se termina solo en el servidor. Con la app abierta va más rápido, porque tu dispositivo también lee."}
           </p>
         </div>
       ) : null}

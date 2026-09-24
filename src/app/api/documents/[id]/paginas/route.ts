@@ -17,6 +17,7 @@ import {
   extraccionCompleta,
   guardarLote,
 } from "@/lib/documents/paginas";
+import { asegurarCola, origenDe } from "@/lib/jobs/impulso";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,6 +73,8 @@ export const POST = route(async (request: Request, { params }: Contexto) => {
   if (cuerpo.fin) {
     const completo = await cerrarExtraccion(id, cuerpo.pageCount);
     if (!completo) return fail("Faltan páginas por mandar.", 409, "INCOMPLETE");
+    // Con el texto ya en el servidor, el resto sigue aunque se cierre la app.
+    await asegurarCola(origenDe(request)).catch(() => undefined);
     return ok({ completo: true });
   }
   const hechas = await prisma.documentPage.count({ where: { documentId: id } });

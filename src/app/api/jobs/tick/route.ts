@@ -18,13 +18,14 @@ import { ensureWorker } from "@/lib/jobs";
 import { runQueue, sliceDeadline } from "@/lib/jobs/queue";
 import { env } from "@/lib/env";
 import { hayOcrPendiente, ocrEnServidor } from "@/lib/jobs/ocr-repartido";
+import { asegurarCola, asegurarLectores, origenDe } from "@/lib/jobs/impulso";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 /** Vercel corta a los 60 s; el margen de guardado lo pone JOB_SLICE_SECONDS. */
 export const maxDuration = 60;
 
-export const POST = route(async () => {
+export const POST = route(async (request: Request) => {
   // Solo se responde a alguien con sesión: no es un endpoint público.
   const user = await requireUser();
   // `run: false`: la rebanada la ejecuta esta misma petición, esperándola.
@@ -34,6 +35,12 @@ export const POST = route(async () => {
   // `ocr`: hay paginas escaneadas esperando. La aplicacion lanza entonces
   // ayudantes (/api/jobs/ocr) para leerlas en paralelo.
   const ocr = pending ? await hayOcrPendiente(user.id) : false;
+  // Si la app se cierra, esto sigue solo (ver src/lib/jobs/impulso.ts).
+  if (pending) {
+    const origen = origenDe(request);
+    await asegurarCola(origen).catch(() => undefined);
+    await asegurarLectores(origen).catch(() => undefined);
+  }
   return ok({
     pending,
     ocr,

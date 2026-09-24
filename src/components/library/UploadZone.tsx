@@ -163,8 +163,9 @@ export function UploadZone() {
         // El dispositivo empieza a sacar el texto y a leer las escaneadas
         // ya, mientras el PDF sube: la subida no hace esperar a la lectura.
         void (async () => {
-          if (soloDispositivo) {
-            // Los muy grandes se quedan guardados aquí (no se suben).
+          if (soloDispositivo || file.size > capabilities.conservarServidorMb * 1024 * 1024) {
+            // Los grandes se quedan guardados aquí: los muy grandes no se suben,
+            // y de los demás el servidor borra su copia al terminar.
             await conservarPdfLocal(nuevoId, file).catch(() => recordarPdfLocal(nuevoId, file));
           } else {
             recordarPdfLocal(nuevoId, file);
@@ -404,10 +405,10 @@ export function UploadZone() {
                   className="rounded-[0.7rem] px-3 py-2 text-[0.8rem]"
                   style={{ background: "var(--accent-soft)", color: "var(--text-soft)" }}
                 >
-                  Es un PDF grande ({formatBytes(file.size)}): no hace falta subirlo. Se
+                  Es un PDF muy grande ({formatBytes(file.size)}): no hace falta subirlo. Se
                   guarda en este dispositivo y al servidor solo va el texto, así que
-                  empieza a leerse al momento. Para ver el PDF original, ábrelo desde
-                  este mismo dispositivo.
+                  empieza a leerse al momento. Deja la app abierta mientras se lee: al
+                  no estar en el servidor, solo este dispositivo puede leerlo.
                 </p>
               ) : null}
             </section>
@@ -508,6 +509,15 @@ export function UploadZone() {
         </ol>
       </section>
 
+      {phase === "uploading" ? (
+        <p
+          className="card p-3 text-[0.82rem]"
+          style={{ background: "var(--accent-soft)", borderColor: "transparent" }}
+        >
+          No cierres la app hasta que termine de subir: a la vez ya se está leyendo.
+        </p>
+      ) : null}
+
       {phase === "processing" ? (
         <p
           className="card p-3 text-[0.82rem]"
@@ -516,8 +526,9 @@ export function UploadZone() {
           {status && status.pageCount > 80
             ? `Es un documento largo (${status.pageCount} páginas): puede tardar unos minutos. `
             : ""}
-          Deja la aplicación abierta mientras tanto (puedes ir a otras pantallas de
-          la app). Si la cierras, se pausa y sigue donde se quedó al volver a abrirla.
+          {file && file.size > capabilities.maxServidorMb * 1024 * 1024
+            ? "Deja la app abierta mientras se lee: este PDF solo está en tu dispositivo."
+            : "Ya puedes cerrar la app: se termina solo en el servidor. Con la app abierta va más rápido, porque tu dispositivo también lee."}
         </p>
       ) : null}
 

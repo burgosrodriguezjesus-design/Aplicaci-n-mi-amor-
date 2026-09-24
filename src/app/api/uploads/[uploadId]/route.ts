@@ -15,6 +15,7 @@ import {
   idDeSubidaValido,
   juntarTrozos,
 } from "@/lib/documents/trozos";
+import { asegurarCola, origenDe } from "@/lib/jobs/impulso";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -65,7 +66,7 @@ export const POST = route(async (request: Request, { params }: Contexto) => {
       documentId = (await prepararDocumento(user.id, cuerpo.name, datos.length, campos)).id;
     }
 
-    return await completarDocumento(documentId, datos, {
+    const respuesta = await completarDocumento(documentId, datos, {
       extraeDispositivo: cuerpo.extraeDispositivo === true,
       // Si el almacenamiento sabe, los trozos pasan a ser el PDF tal cual:
       // no se reescriben 60 MB de golpe (en Vercel podía pasar del límite).
@@ -78,6 +79,9 @@ export const POST = route(async (request: Request, { params }: Contexto) => {
             )
         : undefined,
     });
+    // A partir de aquí sigue solo aunque se cierre la app.
+    await asegurarCola(origenDe(request)).catch(() => undefined);
+    return respuesta;
   } catch (error) {
     if (error instanceof Rechazo) return error.respuesta;
     throw error;

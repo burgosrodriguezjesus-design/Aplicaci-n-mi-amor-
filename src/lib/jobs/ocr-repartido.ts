@@ -34,6 +34,7 @@ export function ocrEnServidor() {
   return !process.env.VERCEL;
 }
 const RECLAMO_CADUCA_MS = 3 * 60_000;
+const RECLAMO_DISPOSITIVO_MS = 45_000;
 /** Paginas que se reclaman de una vez por cada hilo de reconocimiento. */
 const POR_RECLAMO = 2;
 
@@ -46,11 +47,21 @@ function pendiente(documentId: string) {
   };
 }
 
-function libre() {
+/**
+ * Una página está libre si nadie la tiene reservada o si su reserva ha
+ * caducado. Las de un dispositivo caducan antes: las renueva cada pocos
+ * segundos, así que si deja de hacerlo es que se ha cerrado la app, y el
+ * servidor debe seguir sin esperar minutos.
+ */
+export function libre() {
   return {
     OR: [
       { ocrToken: null },
       { ocrReclamadaEn: { lt: new Date(Date.now() - RECLAMO_CADUCA_MS) } },
+      {
+        ocrToken: { startsWith: "d:" },
+        ocrReclamadaEn: { lt: new Date(Date.now() - RECLAMO_DISPOSITIVO_MS) },
+      },
     ],
   };
 }
@@ -193,7 +204,8 @@ export async function reconocerRepartido(opts: {
   const { documentId, pdfPath, deadline } = opts;
   if (!ocrAvailable()) return 0;
 
-  const token = randomUUID();
+  // "s:" = lo está leyendo el servidor (los dispositivos usan "d:").
+  const token = `s:${randomUUID()}`;
   let leidas = 0;
   let intentadas = 0;
   let fallos = 0;
