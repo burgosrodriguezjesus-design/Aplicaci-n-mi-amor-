@@ -13,6 +13,10 @@
  * volver a descargarlo (por tramos, como el visor).
  *
  *   BASE_URL=http://localhost:3000 node scripts/prueba-vercel.mjs [pdf]
+ *
+ * Prueba la lectura de escaneados en el SERVIDOR. Con VERCEL=1 el servidor no
+ * lee (lo hace el dispositivo), así que arráncalo con OCR_EN_SERVIDOR=1.
+ * La lectura en el dispositivo se prueba con un navegador de verdad.
  */
 import http from "node:http";
 import { createHash, randomUUID } from "node:crypto";

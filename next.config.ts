@@ -70,6 +70,8 @@ const nextConfig: NextConfig = {
       "./docker-compose.yml",
       "./render.yaml",
       "./prisma/*.db*",
+      // El lector de escaneados del navegador: se sirve como estático.
+      "./public/ocr/**",
       // Cada funcion de Vercel puede pesar como mucho 250 MB y con todo esto
       // se quedaba a unos pocos. Nada de lo siguiente se usa en el servidor:
       // - los motores de Prisma para el "edge" (aqui va el motor de Node),

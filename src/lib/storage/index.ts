@@ -25,14 +25,16 @@ export interface StorageDriver {
   getRange?(key: string, inicio: number, fin: number): Promise<Buffer>;
 }
 
-const root = path.resolve(process.cwd(), env.storage.dir);
+// turbopackIgnore: la carpeta la elige una variable; rastrearla metería el
+// proyecto entero en cada función del servidor.
+const root = path.resolve(/*turbopackIgnore: true*/ process.cwd(), env.storage.dir);
 
 /** Evita path traversal: una clave solo puede contener segmentos seguros. */
 function resolveKey(key: string): string {
   if (!/^[a-zA-Z0-9/_.-]+$/.test(key) || key.includes("..")) {
     throw new Error(`Clave de almacenamiento invalida: ${key}`);
   }
-  const full = path.resolve(root, key);
+  const full = path.resolve(/*turbopackIgnore: true*/ root, key);
   if (!full.startsWith(root + path.sep)) {
     throw new Error("Clave fuera del directorio de almacenamiento.");
   }

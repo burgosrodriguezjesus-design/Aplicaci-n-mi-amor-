@@ -33,3 +33,6 @@ tests/fixtures/escaneado-largo.pdf
 # Esquema de Prisma generado segun DATABASE_URL
 prisma/schema.runtime.prisma
 
+
+# Generado por scripts/ocr-navegador.mjs al construir
+/public/ocr/

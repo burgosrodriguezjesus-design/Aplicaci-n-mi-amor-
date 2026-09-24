@@ -203,7 +203,7 @@ async function ensureLanguageData(lang: string): Promise<string | null> {
   const pkg = findPackageDir(`@tesseract.js-data/${lang}`);
   if (pkg) {
     for (const variant of ["4.0.0_best_int", "4.0.0"]) {
-      if (existsSync(path.join(pkg, variant, file))) return path.join(pkg, variant);
+      if (existsSync(path.join(/*turbopackIgnore: true*/ pkg, variant, file))) return path.join(/*turbopackIgnore: true*/ pkg, variant);
     }
   }
 
@@ -356,6 +356,11 @@ export async function ocrPages(
    * no llegan a intentarse (por pararse antes) no pasan por aqui.
    */
   onTried?: (pageNumber: number) => void | Promise<void>,
+  /**
+   * La página no se ha podido ni preparar (dibujarla como imagen). No es que
+   * no tenga texto: es un fallo del servidor, y no cuenta como intento.
+   */
+  onFallo?: (pageNumber: number) => void | Promise<void>,
 ): Promise<OcrResult[]> {
   const engine = ocrEngine();
   if (engine === "none") return [];
@@ -421,6 +426,9 @@ export async function ocrPages(
           } catch {
             /* página no transcribible: se deja vacía */
           }
+        } else {
+          await onFallo?.(pageNumber);
+          continue;
         }
         done += 1;
         await onTried?.(pageNumber);

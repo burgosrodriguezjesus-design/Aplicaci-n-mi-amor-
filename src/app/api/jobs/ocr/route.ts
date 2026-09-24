@@ -16,7 +16,9 @@ import { pdfEnDisco } from "@/lib/storage/en-disco";
 import {
   avisarProgresoOcr,
   documentoConOcrLibre,
+  documentoConOcrPendiente,
   hayOcrPendiente,
+  ocrEnServidor,
   reconocerRepartido,
 } from "@/lib/jobs/ocr-repartido";
 
@@ -24,8 +26,24 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-export const POST = route(async () => {
+export const POST = route(async (request: Request) => {
   const user = await requireUser();
+
+  // Donde el servidor no lee (Vercel), esto solo dice qué documento hay que
+  // leer en el dispositivo. `servidor: true` lo fuerza, como último recurso
+  // si el dispositivo no puede.
+  const forzar = await request
+    .json()
+    .then((cuerpo: { servidor?: boolean }) => cuerpo?.servidor === true)
+    .catch(() => false);
+  if (!ocrEnServidor() && !forzar) {
+    const pendiente = await documentoConOcrPendiente(user.id);
+    return ok({
+      pending: pendiente !== null,
+      enDispositivo: true,
+      documentId: pendiente?.id ?? null,
+    });
+  }
 
   const documento = await documentoConOcrLibre(user.id);
   if (!documento) {

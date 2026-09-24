@@ -4,14 +4,14 @@
  * Estrategias:
  *  - Navegaciones: red primero con respaldo en caché (para que la aplicación
  *    abra aunque no haya conexión).
- *  - Estáticos de Next y tipografías: caché primero.
+ *  - Estáticos de Next, tipografías y el lector de escaneados: caché primero.
  *  - API: siempre red. Nunca se cachean datos privados del usuario.
  *  - Audio (`/api/audio/.../stream`): preparado para descarga offline. Solo se
  *    guarda en caché cuando la propia aplicación lo pide explícitamente con el
  *    mensaje `CACHE_AUDIO`, nunca de forma automática.
  */
 
-const VERSION = "v2";
+const VERSION = "v3";
 const SHELL_CACHE = `estudia-shell-${VERSION}`;
 const STATIC_CACHE = `estudia-static-${VERSION}`;
 const AUDIO_CACHE = `estudia-audio-${VERSION}`;
@@ -46,6 +46,8 @@ function isStatic(url) {
   return (
     url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
+    // Motor y modelos de lectura de escaneados: unos MB que no cambian.
+    url.pathname.startsWith("/ocr/") ||
     url.hostname === "fonts.googleapis.com" ||
     url.hostname === "fonts.gstatic.com"
   );

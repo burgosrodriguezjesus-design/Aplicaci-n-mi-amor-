@@ -31,6 +31,7 @@ import {
   avisarProgresoOcr,
   contarPendientes,
   MAX_INTENTOS,
+  ocrEnServidor,
   reconocerRepartido,
 } from "./ocr-repartido";
 import {
@@ -156,7 +157,7 @@ async function extractPages(
 
   const pageCount = extraction?.pageCount ?? guardado?.pageCount ?? filas;
 
-  if (ocrAvailable() && (await contarPendientes(documentId)) > 0) {
+  if (ocrEnServidor() && ocrAvailable() && (await contarPendientes(documentId)) > 0) {
     await setStatus(
       documentId,
       jobId,
@@ -190,7 +191,9 @@ async function extractPages(
   });
 
   // Quedan paginas por leer: esto sigue en la siguiente ronda.
-  const ocrPendiente = ocrAvailable() && (await contarPendientes(documentId)) > 0;
+  // (Si las lee el dispositivo, quedan pendientes hasta que las mande.)
+  const ocrPendiente =
+    (ocrEnServidor() ? ocrAvailable() : true) && (await contarPendientes(documentId)) > 0;
   if (ocrPendiente) {
     return { pages, pageCount, coverage, linesByPage: new Map<number, PageLine[]>(), ocrPendiente };
   }
@@ -487,6 +490,13 @@ async function headingsFor(
   return { headings: detectHeadings(pages, structure), toc: structure.toc };
 }
 
+/** ¿Ya está extraído y solo faltan páginas escaneadas por leer? */
+async function esperandoAlDispositivo(documentId: string, pageCount: number) {
+  if (pageCount === 0) return false;
+  const filas = await prisma.documentPage.count({ where: { documentId } });
+  return filas === pageCount && (await contarPendientes(documentId)) > 0;
+}
+
 /** Handler principal: procesa un documento de principio a fin. */
 async function handleProcessDocument(job: {
   id: string;
@@ -496,6 +506,13 @@ async function handleProcessDocument(job: {
 }): Promise<JobOutcome> {
   const document = await prisma.document.findUnique({ where: { id: job.documentId } });
   if (!document) throw new ProcessingError("NOT_FOUND", "El documento ya no existe.");
+
+  // Las páginas escaneadas las está leyendo el dispositivo: no hace falta
+  // traer el PDF (60 MB en un libro) solo para decir que aún no ha terminado.
+  if (!ocrEnServidor() && (await esperandoAlDispositivo(document.id, document.pageCount))) {
+    await new Promise((listo) => setTimeout(listo, 3000));
+    return { pending: true, message: "Leyendo las páginas escaneadas en tu dispositivo…" };
+  }
 
   let data: Buffer;
   let pdfPath: string;

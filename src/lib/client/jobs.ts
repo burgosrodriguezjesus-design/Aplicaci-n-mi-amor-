@@ -12,6 +12,12 @@
  * Es seguro llamarla de más: si no hay nada que hacer, termina enseguida.
  */
 import { api } from "./api";
+import { leerEnDispositivo } from "./ocr-dispositivo";
+
+type RespuestaOcr = { pending: boolean; enDispositivo?: boolean; documentId?: string | null };
+
+/** Si el dispositivo no puede leer, el servidor lo intenta como último recurso. */
+let servidorComoRespaldo = false;
 
 /** Ayudantes de lectura en paralelo, además de la rebanada normal. */
 const AYUDANTES = 3;
@@ -27,9 +33,11 @@ async function ayudar(cancelado?: () => boolean) {
   try {
     while (!cancelado?.()) {
       try {
-        const respuesta = await api.post<{ pending: boolean }>("/api/jobs/ocr", {});
+        const respuesta = await api.post<RespuestaOcr>("/api/jobs/ocr", {
+          servidor: servidorComoRespaldo,
+        });
         fallos = 0;
-        if (!respuesta.pending) return;
+        if (!respuesta.pending || respuesta.enDispositivo) return;
       } catch {
         fallos += 1;
         if (fallos >= FALLOS_SEGUIDOS_MAXIMOS) return;
@@ -54,8 +62,16 @@ async function vigilar(sigue: () => boolean, cancelado?: () => boolean) {
   while (sigue() && !cancelado?.()) {
     if (ayudantesEnMarcha === 0) {
       try {
-        const respuesta = await api.post<{ pending: boolean }>("/api/jobs/ocr", {});
-        if (respuesta.pending) {
+        const respuesta = await api.post<RespuestaOcr>("/api/jobs/ocr", {
+          servidor: servidorComoRespaldo,
+        });
+        if (respuesta.pending && respuesta.enDispositivo && respuesta.documentId) {
+          // Las lee este mismo dispositivo: más rápido y sin depender del servidor.
+          const resultado = await leerEnDispositivo(respuesta.documentId, { cancelado });
+          if (resultado === "sin-motor") servidorComoRespaldo = true;
+          continue;
+        }
+        if (respuesta.pending && !respuesta.enDispositivo) {
           lanzarAyudantes(cancelado);
           continue;
         }
@@ -88,11 +104,15 @@ async function empujar(opts: { cancelado?: () => boolean }) {
     for (;;) {
       if (opts.cancelado?.()) return;
       try {
-        const respuesta = await api.post<{ pending: boolean; ocr?: boolean }>(
+        const respuesta = await api.post<{
+          pending: boolean;
+          ocr?: boolean;
+          ocrEnServidor?: boolean;
+        }>(
           "/api/jobs/tick",
           {},
         );
-        if (respuesta.ocr) lanzarAyudantes(opts.cancelado);
+        if (respuesta.ocr && respuesta.ocrEnServidor) lanzarAyudantes(opts.cancelado);
         if (!respuesta.pending) return;
       } catch {
         // Una rebanada que falla no pierde nada: lo hecho está guardado.

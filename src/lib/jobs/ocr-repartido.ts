@@ -18,8 +18,21 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { prisma } from "../db";
 import { ocrAvailable, ocrPages } from "../pdf/ocr";
+import { limpiarTextoOcr } from "../pdf/limpiar-ocr";
 
 export const MAX_INTENTOS = 2;
+
+/**
+ * ¿Lee el servidor las páginas escaneadas? En Vercel, no: cada petición tiene
+ * una sola CPU y poco tiempo, y ahí la preparación de las páginas falla. Allí
+ * las lee el propio dispositivo (ver src/lib/client/ocr-dispositivo.ts), que
+ * además es mucho más rápido. OCR_EN_SERVIDOR=1 lo fuerza.
+ */
+export function ocrEnServidor() {
+  const forzado = process.env.OCR_EN_SERVIDOR;
+  if (forzado) return !/^(0|false|no)$/i.test(forzado);
+  return !process.env.VERCEL;
+}
 const RECLAMO_CADUCA_MS = 3 * 60_000;
 /** Paginas que se reclaman de una vez por cada hilo de reconocimiento. */
 const POR_RECLAMO = 2;
@@ -48,7 +61,7 @@ export async function contarPendientes(documentId: string) {
 
 /** ¿Tiene este usuario algun documento con paginas esperando reconocimiento? */
 export async function hayOcrPendiente(userId: string) {
-  if (!ocrAvailable()) return false;
+  if (ocrEnServidor() && !ocrAvailable()) return false;
   const pagina = await prisma.documentPage.findFirst({
     where: {
       source: "EMPTY",
@@ -76,8 +89,21 @@ export async function documentoConOcrLibre(userId: string) {
   return pagina?.document ?? null;
 }
 
+/** El documento de este usuario con paginas por leer (libres o no). */
+export async function documentoConOcrPendiente(userId: string) {
+  const pagina = await prisma.documentPage.findFirst({
+    where: {
+      source: "EMPTY",
+      ocrIntentos: { lt: MAX_INTENTOS },
+      document: { userId, status: { notIn: ["READY", "FAILED"] } },
+    },
+    select: { document: { select: { id: true } } },
+  });
+  return pagina?.document ?? null;
+}
+
 /** Reclama hasta `cuantas` paginas libres. Devuelve las que se han conseguido. */
-async function reclamar(documentId: string, token: string, cuantas: number) {
+export async function reclamar(documentId: string, token: string, cuantas: number) {
   const candidatas = await prisma.documentPage.findMany({
     where: { ...pendiente(documentId), ...libre() },
     orderBy: { pageNumber: "asc" },
@@ -149,9 +175,11 @@ export async function reconocerRepartido(opts: {
   const token = randomUUID();
   let leidas = 0;
   let intentadas = 0;
+  let fallos = 0;
   const reclamadas = new Set<number>();
 
   const siguienteLote = async () => {
+    if (fallos >= 2) return [];
     if (Date.now() >= deadline && intentadas > 0) return [];
     const paginas = await reclamar(documentId, token, POR_RECLAMO);
     for (const p of paginas) reclamadas.add(p);
@@ -165,11 +193,12 @@ export async function reconocerRepartido(opts: {
       undefined,
       async (resultado) => {
         leidas += 1;
+        const texto = limpiarTextoOcr(resultado.text);
         await prisma.documentPage.updateMany({
           where: { documentId, pageNumber: resultado.pageNumber },
           data: {
-            text: resultado.text,
-            charCount: resultado.text.replace(/\s/g, "").length,
+            text: texto,
+            charCount: texto.replace(/\s/g, "").length,
             source: "OCR",
             ocrToken: null,
             ocrReclamadaEn: null,
@@ -179,7 +208,7 @@ export async function reconocerRepartido(opts: {
       },
       // Se para al acabarse el tiempo, pero nunca antes de haber intentado
       // una pagina: si no, una peticion que llega justa no avanzaria nunca.
-      () => intentadas > 0 && Date.now() >= deadline,
+      () => fallos >= 2 || (intentadas > 0 && Date.now() >= deadline),
       async (pagina) => {
         intentadas += 1;
         reclamadas.delete(pagina);
@@ -189,6 +218,17 @@ export async function reconocerRepartido(opts: {
           data: { ocrToken: null, ocrReclamadaEn: null, ocrIntentos: { increment: 1 } },
         });
         await avisarProgresoOcr(documentId).catch(() => undefined);
+      },
+      async (pagina) => {
+        // No se ha podido ni dibujar: fallo del servidor, no de la página.
+        // Se suelta sin contar el intento, y con dos seguidos se para.
+        fallos += 1;
+        reclamadas.delete(pagina);
+        await prisma.documentPage.updateMany({
+          where: { documentId, pageNumber: pagina, ocrToken: token },
+          data: { ocrToken: null, ocrReclamadaEn: null },
+        });
+        console.error(`[ocr] no se ha podido preparar la página ${pagina} de ${documentId}`);
       },
     );
   } finally {
@@ -203,4 +243,49 @@ export async function reconocerRepartido(opts: {
     }
   }
   return leidas;
+}
+
+
+/** Lo que devuelve el dispositivo: el texto de cada página que ha leído. */
+export type LecturaDeDispositivo = { pageNumber: number; text: string };
+
+/**
+ * Guarda lo leído en el dispositivo. Una página sin texto legible cuenta como
+ * intento (y tras MAX_INTENTOS deja de pedirse); con texto, queda leída.
+ * Se acepta aunque el reclamo haya caducado: el trabajo ya está hecho.
+ */
+export async function guardarLecturas(
+  documentId: string,
+  token: string,
+  lecturas: LecturaDeDispositivo[],
+) {
+  let leidas = 0;
+  for (const lectura of lecturas) {
+    const texto = limpiarTextoOcr(lectura.text ?? "");
+    const util = (texto.match(/[\p{L}\p{N}]/gu) ?? []).length >= 3;
+    const hecho = await prisma.documentPage.updateMany({
+      where: { documentId, pageNumber: lectura.pageNumber, source: "EMPTY" },
+      data: util
+        ? {
+            text: texto,
+            charCount: texto.replace(/\s/g, "").length,
+            source: "OCR",
+            ocrToken: null,
+            ocrReclamadaEn: null,
+            ocrIntentos: { increment: 1 },
+          }
+        : { ocrToken: null, ocrReclamadaEn: null, ocrIntentos: { increment: 1 } },
+    });
+    if (util && hecho.count > 0) leidas += 1;
+  }
+  await avisarProgresoOcr(documentId, true);
+  return leidas;
+}
+
+/** Suelta lo que el dispositivo tenía reservado y no va a leer. */
+export async function soltar(documentId: string, token: string) {
+  await prisma.documentPage.updateMany({
+    where: { documentId, ocrToken: token },
+    data: { ocrToken: null, ocrReclamadaEn: null },
+  });
 }

@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, ApiError, uploadDocument, type UploadHandle } from "@/lib/client/api";
 import { empujarTrabajo } from "@/lib/client/jobs";
+import { recordarPdfLocal } from "@/lib/client/ocr-dispositivo";
 import {
   DEPTH_OPTIONS,
   LEVEL_OPTIONS,
@@ -153,6 +154,8 @@ export function UploadZone() {
 
     try {
       const result = await handle.promise;
+      // Si es escaneado, este dispositivo lo leerá de memoria, sin descargarlo.
+      recordarPdfLocal(result.document.id, file);
       setDocumentId(result.document.id);
       setPhase("processing");
     } catch (caught) {

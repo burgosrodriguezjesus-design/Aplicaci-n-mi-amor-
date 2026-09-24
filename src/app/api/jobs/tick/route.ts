@@ -17,7 +17,7 @@ import { ok, route } from "@/lib/api";
 import { ensureWorker } from "@/lib/jobs";
 import { runQueue, sliceDeadline } from "@/lib/jobs/queue";
 import { env } from "@/lib/env";
-import { hayOcrPendiente } from "@/lib/jobs/ocr-repartido";
+import { hayOcrPendiente, ocrEnServidor } from "@/lib/jobs/ocr-repartido";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,5 +34,10 @@ export const POST = route(async () => {
   // `ocr`: hay paginas escaneadas esperando. La aplicacion lanza entonces
   // ayudantes (/api/jobs/ocr) para leerlas en paralelo.
   const ocr = pending ? await hayOcrPendiente(user.id) : false;
-  return ok({ pending, ocr, sliceSeconds: env.jobs.sliceSeconds });
+  return ok({
+    pending,
+    ocr,
+    ocrEnServidor: ocrEnServidor(),
+    sliceSeconds: env.jobs.sliceSeconds,
+  });
 });

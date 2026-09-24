@@ -76,6 +76,26 @@ export function DocumentView({ documentId }: { documentId: string }) {
     return () => clearInterval(interval);
   }, [load, processing]);
 
+  const [releyendo, setReleyendo] = useState(false);
+
+  /** Lee otra vez, en este dispositivo, las páginas que se quedaron sin texto. */
+  const releerEscaneadas = async () => {
+    setReleyendo(true);
+    try {
+      await api.post(`/api/documents/${documentId}/releer`, {});
+      await load();
+      void empujarTrabajo();
+    } catch (caught) {
+      toast({
+        title: "No hemos podido empezar",
+        description: caught instanceof ApiError ? caught.message : undefined,
+        variant: "error",
+      });
+    } finally {
+      setReleyendo(false);
+    }
+  };
+
   const changeTab = useCallback(
     (next: Tab) => {
       setTab(next);
@@ -336,6 +356,16 @@ export function DocumentView({ documentId }: { documentId: string }) {
         >
           Solo hemos podido leer texto en el {document_.textCoverage} % de las páginas. Las
           páginas escaneadas sin texto reconocible no aparecen en el resumen.
+          {document_.status === "READY" || document_.status === "FAILED" ? (
+            <button
+              type="button"
+              className="btn btn-secondary mt-2 w-full"
+              onClick={releerEscaneadas}
+              disabled={releyendo}
+            >
+              {releyendo ? "Preparando…" : "Volver a leer las páginas escaneadas"}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
