@@ -57,6 +57,38 @@ comprobar("ni para crear tablas", app.urlParaMigrar(NORMAL) === NORMAL);
 comprobar("SQLite no se toca", app.urlParaApp("file:./dev.db") === "file:./dev.db");
 comprobar("una dirección rota no revienta", app.urlParaApp("no es una url") === "no es una url");
 
+// ── Variables con prefijo, como las deja Vercel al conectar la base de datos
+// (este es el caso real que hacia decir "falta la base de datos"): una
+// DATABASE_URL copiada del ejemplo apuntando a un fichero, y la de verdad
+// con el prefijo que se elige al conectar.
+const CON_PREFIJO = {
+  DATABASE_URL: "file:./dev.db",
+  estudia_DATABASE_URL: NEON_POOL,
+  estudia_POSTGRES_PRISMA_URL: NEON_POOL + "&pgbouncer=true",
+  estudia_DATABASE_URL_UNPOOLED: NORMAL,
+  estudia_PGHOST: "ep-rapido-123456-pooler.eu-central-1.aws.neon.tech",
+  AUTH_SECRET: "",
+  OTRA_COSA: "postgresql://no-deberia-verse@x/y",
+};
+comprobar("con prefijo: se encuentra la de verdad", app.elegirDireccion(CON_PREFIJO) === NEON_POOL);
+const vistas = app.variablesDeBaseDeDatos(CON_PREFIJO);
+comprobar("con prefijo: se listan las variables de base de datos",
+  vistas.includes("estudia_DATABASE_URL") && vistas.includes("estudia_POSTGRES_PRISMA_URL"),
+  vistas.join(", "));
+comprobar("con prefijo: no se cuelan otras variables",
+  !vistas.includes("estudia_PGHOST") && !vistas.includes("OTRA_COSA") && !vistas.includes("AUTH_SECRET"),
+  vistas.join(", "));
+comprobar("sin nada: dirección vacía", app.elegirDireccion({}) === "");
+comprobar("solo SQLite: se usa esa", app.elegirDireccion({ DATABASE_URL: "file:./dev.db" }) === "file:./dev.db");
+comprobar("PostgreSQL con nombre de Vercel sin prefijo",
+  app.elegirDireccion({ DATABASE_URL: "file:./dev.db", POSTGRES_URL: NORMAL }) === NORMAL);
+for (const entorno of [CON_PREFIJO, {}, { POSTGRES_PRISMA_URL: SUPA_TX }]) {
+  comprobar("app y construcción eligen la misma variable",
+    app.elegirDireccion(entorno) === build.elegirDireccion(entorno) &&
+      JSON.stringify(app.variablesDeBaseDeDatos(entorno)) ===
+        JSON.stringify(build.variablesDeBaseDeDatos(entorno)));
+}
+
 // ── Las dos copias dicen exactamente lo mismo
 for (const url of [SUPA_TX, SUPA_SES, SUPA_DIRECTA, NEON_POOL, NORMAL, "file:./dev.db", "basura"]) {
   const iguales =

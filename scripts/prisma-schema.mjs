@@ -14,31 +14,18 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { elegirDireccion } from "./db-url.mjs";
 
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const origen = path.join(raiz, "prisma", "schema.prisma");
 const destino = path.join(raiz, "prisma", "schema.runtime.prisma");
 
-/** Los nombres con los que puede llegar la direccion de la base de datos. */
-export const NOMBRES_URL = [
-  "DATABASE_URL",
-  "POSTGRES_PRISMA_URL",
-  "POSTGRES_URL_NON_POOLING",
-  "POSTGRES_URL",
-  "DATABASE_URL_UNPOOLED",
-  "NEON_DATABASE_URL",
-  "POSTGRES_URL_NO_SSL",
-];
-
 /**
- * Elige la direccion entre todos los nombres posibles.
- *
- * Manda la que sea PostgreSQL: una `DATABASE_URL` vieja apuntando a un fichero
- * no puede ganarle a la base de datos de verdad que ha conectado Vercel.
+ * La direccion de la base de datos, venga con el nombre que venga (tambien con
+ * el prefijo que pone Vercel, como `estudia_DATABASE_URL`). Ver scripts/db-url.mjs.
  */
 export function direccion(entorno = process.env) {
-  const valores = NOMBRES_URL.map((nombre) => entorno[nombre]).filter(Boolean);
-  return valores.find((valor) => /^postgres(ql)?:\/\//i.test(valor)) ?? valores[0] ?? "";
+  return elegirDireccion(entorno);
 }
 
 /**

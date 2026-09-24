@@ -5,7 +5,7 @@
  * Ninguna clave de API se expone jamas al cliente.
  */
 import "server-only";
-import { urlParaApp } from "./db-url";
+import { elegirDireccion, urlParaApp, variablesDeBaseDeDatos } from "./db-url";
 
 function str(name: string, fallback = ""): string {
   const value = process.env[name];
@@ -26,24 +26,11 @@ function bool(name: string, fallback: boolean): boolean {
 const authSecret = str("AUTH_SECRET");
 
 /**
- * Direccion de la base de datos.
- *
- * Vercel, cuando creas la base de datos desde su panel, inyecta la variable
- * con otros nombres. Se aceptan todos para que no haya que copiar nada a mano.
+ * Que variables de base de datos estan puestas, con o sin el prefijo que pone
+ * Vercel (`estudia_DATABASE_URL`...). Solo los nombres, nunca los valores.
  */
-export const NOMBRES_BASE_DE_DATOS = [
-  "DATABASE_URL",
-  "POSTGRES_PRISMA_URL",
-  "POSTGRES_URL_NON_POOLING",
-  "POSTGRES_URL",
-  "DATABASE_URL_UNPOOLED",
-  "NEON_DATABASE_URL",
-  "POSTGRES_URL_NO_SSL",
-] as const;
-
-/** Que nombres de esos estan puestos. Solo los nombres, nunca los valores. */
 export function nombresDeBaseDeDatosVistos(): string[] {
-  return NOMBRES_BASE_DE_DATOS.filter((nombre) => str(nombre) !== "");
+  return variablesDeBaseDeDatos();
 }
 
 const EN_LA_NUBE = Boolean(
@@ -61,15 +48,13 @@ const ES_POSTGRES = /^postgres(ql)?:\/\//i;
  * En la nube manda la que sea PostgreSQL, este en la variable que este.
  */
 function databaseUrl() {
-  const valores = NOMBRES_BASE_DE_DATOS.map((nombre) => str(nombre)).filter(Boolean);
-
-  const postgres = valores.find((valor) => ES_POSTGRES.test(valor));
-  if (postgres) return postgres;
+  const elegida = elegirDireccion();
+  if (ES_POSTGRES.test(elegida)) return elegida;
 
   // En la nube no se cae a SQLite: un fichero no sobrevive, y fingir que hay
   // base de datos solo sirve para que el fallo llegue mas tarde y peor.
   if (EN_LA_NUBE) return "";
-  return valores[0] ?? "file:./dev.db";
+  return elegida || "file:./dev.db";
 }
 
 /**

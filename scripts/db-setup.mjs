@@ -16,8 +16,8 @@ import { fileURLToPath } from "node:url";
 const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCHEMA = "prisma/schema.runtime.prisma";
 
-import { direccion as direccionBaseDeDatos, NOMBRES_URL } from "./prisma-schema.mjs";
-import { esDirectaDeSupabase, urlParaMigrar } from "./db-url.mjs";
+import { direccion as direccionBaseDeDatos } from "./prisma-schema.mjs";
+import { esDirectaDeSupabase, urlParaMigrar, variablesDeBaseDeDatos } from "./db-url.mjs";
 
 function ejecutar(orden, args) {
   return new Promise((resolve) => {
@@ -48,7 +48,7 @@ if (url) process.env.DATABASE_URL = url;
 else if (!enVercel) process.env.DATABASE_URL = "file:./dev.db";
 
 if (faltaBaseDeDatos) {
-  const vistas = NOMBRES_URL.filter((nombre) => process.env[nombre]);
+  const vistas = variablesDeBaseDeDatos();
   console.warn(
     "  Variables de base de datos que se ven al construir: " +
       (vistas.length ? vistas.join(", ") : "ninguna") +

@@ -45,3 +45,50 @@ export function esDirectaDeSupabase(url) {
   const u = parsear(url);
   return Boolean(u && /^db\.[a-z0-9]+\.supabase\.co$/.test(u.hostname));
 }
+
+/**
+ * Los nombres con los que puede llegar la direccion, en orden de preferencia.
+ *
+ * Copia de src/lib/db-url.ts.
+ */
+export const NOMBRES_URL = [
+  "DATABASE_URL",
+  "POSTGRES_PRISMA_URL",
+  "POSTGRES_URL_NON_POOLING",
+  "POSTGRES_URL",
+  "DATABASE_URL_UNPOOLED",
+  "NEON_DATABASE_URL",
+  "POSTGRES_URL_NO_SSL",
+];
+
+/**
+ * Las variables puestas que traen la direccion, con o sin prefijo.
+ *
+ * Al conectar la base de datos, Vercel deja elegir un prefijo y entonces la
+ * variable se llama, por ejemplo, `estudia_DATABASE_URL`. Buscar solo el nombre
+ * exacto hacia que la aplicacion dijera que faltaba la base de datos teniendola
+ * conectada. Se devuelven solo los nombres, en orden de preferencia.
+ */
+export function variablesDeBaseDeDatos(entorno = process.env) {
+  const puestas = Object.keys(entorno).filter((clave) => entorno[clave]);
+  const vistas = [];
+  for (const nombre of NOMBRES_URL) {
+    if (puestas.includes(nombre)) vistas.push(nombre);
+    for (const clave of puestas.sort()) {
+      if (clave !== nombre && clave.endsWith("_" + nombre) && !vistas.includes(clave)) {
+        vistas.push(clave);
+      }
+    }
+  }
+  return vistas;
+}
+
+/**
+ * La direccion a usar: la primera que sea PostgreSQL y, si no hay ninguna, la
+ * primera que haya. Una `DATABASE_URL` vieja apuntando a un fichero (la que
+ * copia Vercel del ejemplo al importar) no le gana a la base de datos de verdad.
+ */
+export function elegirDireccion(entorno = process.env) {
+  const valores = variablesDeBaseDeDatos(entorno).map((clave) => entorno[clave]);
+  return valores.find((valor) => /^postgres(ql)?:\/\//i.test(valor)) ?? valores[0] ?? "";
+}
