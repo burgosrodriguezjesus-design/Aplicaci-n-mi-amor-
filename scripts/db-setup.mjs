@@ -17,6 +17,7 @@ const raiz = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SCHEMA = "prisma/schema.runtime.prisma";
 
 import { direccion as direccionBaseDeDatos, NOMBRES_URL } from "./prisma-schema.mjs";
+import { esDirectaDeSupabase, urlParaMigrar } from "./db-url.mjs";
 
 function ejecutar(orden, args) {
   return new Promise((resolve) => {
@@ -61,8 +62,16 @@ const pasos = [
   ["npx", ["prisma", "db", "push", "--schema=" + SCHEMA, "--skip-generate"]],
 ];
 
+// Crear las tablas no funciona por el pooler en modo transaccion: para ese
+// paso se usa la direccion que si lo admite (ver scripts/db-url.mjs).
+const paraMigrar = url ? urlParaMigrar(url) : "";
+
 for (const [orden, args] of pasos) {
+  const esPush = args.includes("push");
+  const previa = process.env.DATABASE_URL;
+  if (esPush && paraMigrar) process.env.DATABASE_URL = paraMigrar;
   const codigo = await ejecutar(orden, args);
+  if (esPush) process.env.DATABASE_URL = previa;
   if (codigo === 0) continue;
 
   // Sin base de datos, `db push` falla por definición: ya se ha avisado y la
@@ -70,6 +79,15 @@ for (const [orden, args] of pasos) {
   if (faltaBaseDeDatos && args.includes("push")) continue;
 
   console.error(`\n✗ Ha fallado: ${orden} ${args.join(" ")}\n`);
+  if (esPush && esDirectaDeSupabase(url)) {
+    console.error(
+      "  Has puesto la conexión DIRECTA de Supabase (db.xxx.supabase.co), que en el\n" +
+        "  plan gratuito solo funciona por IPv6 y Vercel no siempre llega.\n\n" +
+        "  En Supabase: botón «Connect» → pestaña «ORMs» o «Connection string» →\n" +
+        "  elige «Transaction pooler» (puerto 6543) y copia esa. Ponla como\n" +
+        "  DATABASE_URL en Vercel y vuelve a desplegar.\n",
+    );
+  }
   process.exit(codigo);
 }
 

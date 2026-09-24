@@ -5,6 +5,7 @@
  * Ninguna clave de API se expone jamas al cliente.
  */
 import "server-only";
+import { urlParaApp } from "./db-url";
 
 function str(name: string, fallback = ""): string {
   const value = process.env[name];
@@ -91,7 +92,9 @@ function storageDriver() {
 
 // Prisma lee DATABASE_URL del entorno tal cual: se normaliza antes de que lo
 // haga, para aceptar tambien los nombres que inyecta Vercel.
-const direccionBaseDeDatos = databaseUrl();
+// Supabase y Neon necesitan un ajuste para ir por su "pooler" con Prisma: se
+// hace aqui para que valga pegar la direccion tal y como la da el proveedor.
+const direccionBaseDeDatos = urlParaApp(databaseUrl());
 if (direccionBaseDeDatos) process.env.DATABASE_URL = direccionBaseDeDatos;
 
 export const env = {

@@ -9,6 +9,65 @@ sin copiar claves de ningún sitio y **sin configurar ni una variable**.
 
 ---
 
+## Vercel + Supabase (el camino más directo)
+
+Una base de datos en Supabase y la aplicación en Vercel. Solo hay que copiar
+**una** cosa de un sitio a otro.
+
+### A · Crear la base de datos en Supabase
+
+1. Entra en **[supabase.com](https://supabase.com)** → **Start your project** →
+   entra con GitHub.
+2. **New project**.
+3. Rellena:
+   - **Name:** `estudia`
+   - **Database Password:** inventa una **solo con letras y números** (sin
+     `@`, `#`, `/` ni símbolos: rompen la dirección). **Apúntala**, la
+     necesitas en el paso B.
+   - **Region:** la más cercana, por ejemplo *Central EU (Frankfurt)*.
+4. **Create new project** y espera un par de minutos a que termine.
+
+### B · Copiar la dirección
+
+1. Dentro del proyecto, arriba, pulsa el botón **Connect**.
+2. En la ventana que sale, pestaña **Connection String**.
+3. Busca el bloque **Transaction pooler** (el que usa el puerto **6543**).
+   No uses *Direct connection*: desde Vercel puede no llegar.
+4. Copia esa dirección. Tiene esta forma:
+
+   ```
+   postgresql://postgres.abcdefgh:[YOUR-PASSWORD]@aws-0-eu-central-1.pooler.supabase.com:6543/postgres
+   ```
+
+5. **Cambia `[YOUR-PASSWORD]` por tu contraseña del paso A**, corchetes
+   incluidos. Es el error más común: si se queda el texto `[YOUR-PASSWORD]`, no
+   conecta.
+
+### C · Pegarla en Vercel
+
+1. En Vercel, tu proyecto → **Settings** → **Environment Variables**.
+2. **Key:** `DATABASE_URL` · **Value:** la dirección del paso B.
+3. Marca **Production, Preview y Development**.
+4. **Save**.
+5. **Deployments** → los tres puntos (**…**) del primero → **Redeploy** →
+   desmarca **Use existing Build Cache** → **Redeploy**.
+
+Al construir, la aplicación crea sola todas las tablas en Supabase. No hay que
+tocar nada más: ni el puerto, ni parámetros, ni el editor SQL de Supabase. Lo
+que Supabase necesita para ir con Prisma por su *pooler* lo añade la propia
+aplicación.
+
+### D · Comprobar
+
+Abre `https://tu-proyecto.vercel.app/api/health`:
+
+```json
+{"ok":true,"version":"…","database":{"ok":true,"variables":["DATABASE_URL"]},"storage":{"ok":true,"driver":"db"}}
+```
+
+Y ya puedes entrar, crear tu cuenta e instalarla en el móvil (pasos 7 y 8 de
+la guía de abajo).
+
 ## Todo en Vercel, paso a paso
 
 Hace falta **una sola cosa**: la base de datos. Ni almacén de ficheros, ni
