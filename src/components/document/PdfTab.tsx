@@ -4,10 +4,14 @@
  * Visor del PDF original. Se sirve desde una ruta autenticada, nunca desde
  * una URL pública, y se navega a una página concreta con el fragmento #page=N
  * que entienden los visores nativos de los navegadores.
+ *
+ * El PDF se descarga a trozos y se abre desde memoria: asi funciona aunque
+ * pese mas de lo que el alojamiento deja mandar de una vez.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
+import { descargarPdf } from "@/lib/client/pdf";
 
 export function PdfTab({
   documentId,
@@ -22,13 +26,39 @@ export function PdfTab({
 }) {
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [percent, setPercent] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    const control = new AbortController();
+    let url: string | null = null;
+    setPdfUrl(null);
+    setError(null);
+    setPercent(0);
+    setLoading(true);
+    descargarPdf(documentId, setPercent, control.signal)
+      .then((blob) => {
+        url = URL.createObjectURL(blob);
+        setPdfUrl(url);
+      })
+      .catch((caught) => {
+        if (control.signal.aborted) return;
+        setError(caught instanceof Error ? caught.message : "No hemos podido cargar el PDF.");
+      });
+    return () => {
+      control.abort();
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [documentId, attempt]);
 
   // Cambiar el hash obliga al visor a saltar de página.
   useEffect(() => {
     const frame = frameRef.current;
-    if (!frame) return;
-    frame.src = `/api/documents/${documentId}/file#page=${page}&view=FitH`;
-  }, [documentId, page]);
+    if (!frame || !pdfUrl) return;
+    frame.src = `${pdfUrl}#page=${page}&view=FitH`;
+  }, [pdfUrl, page]);
 
   return (
     <div className="space-y-3">
@@ -59,7 +89,7 @@ export function PdfTab({
         </div>
 
         <a
-          href={`/api/documents/${documentId}/file`}
+          href={pdfUrl ?? `/api/documents/${documentId}/file`}
           target="_blank"
           rel="noreferrer"
           className="btn btn-ghost ml-auto"
@@ -70,14 +100,37 @@ export function PdfTab({
       </div>
 
       <div className="card relative overflow-hidden" style={{ height: "min(75vh, 900px)" }}>
-        {loading ? (
+        {loading && !error ? (
           <div className="skeleton absolute inset-0" aria-hidden="true" />
+        ) : null}
+        {!pdfUrl && !error ? (
+          <div
+            className="absolute inset-0 flex items-center justify-center text-sm tabular-nums"
+            style={{ color: "var(--text-muted)" }}
+            role="status"
+          >
+            Cargando el PDF… {percent}%
+          </div>
+        ) : null}
+        {error ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center">
+            <p className="text-sm">{error}</p>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setAttempt((value) => value + 1)}
+            >
+              Reintentar
+            </button>
+          </div>
         ) : null}
         <iframe
           ref={frameRef}
           title="PDF original"
           className="h-full w-full"
-          onLoad={() => setLoading(false)}
+          onLoad={() => {
+            if (pdfUrl) setLoading(false);
+          }}
         />
       </div>
 

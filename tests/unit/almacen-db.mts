@@ -23,7 +23,7 @@ process.env.DATABASE_URL ??= "file:./dev.db";
 const require_ = (await import("node:module")).createRequire(import.meta.url);
 require_.cache[require_.resolve("server-only")] = { exports: {} } as never;
 
-const { storage } = await import("../../src/lib/storage/index");
+const { storage, leerTramo } = await import("../../src/lib/storage/index");
 const { prisma } = await import("../../src/lib/db");
 
 const clave = `documents/prueba/${Date.now()}.pdf`;
@@ -48,6 +48,15 @@ for (;;) {
   if (value) partes.push(value);
 }
 comprobar("se puede servir por streaming", Buffer.concat(partes).equals(contenido));
+
+// El visor pide el PDF a tramos: cada uno tiene que ser exactamente ese trozo.
+const desdeMitad = contenido.length - 5;
+comprobar("un tramo del principio",
+  (await leerTramo(clave, 0, 9)).equals(contenido.subarray(0, 9)));
+comprobar("un tramo del medio",
+  (await leerTramo(clave, 1_000_000, 1_000_100)).equals(contenido.subarray(1_000_000, 1_000_100)));
+comprobar("un tramo que pasa del final se corta en el final",
+  (await leerTramo(clave, desdeMitad, desdeMitad + 100)).equals(contenido.subarray(desdeMitad)));
 
 const fila = await prisma.storedFile.findUnique({ where: { key: clave } });
 comprobar("se guarda con su tipo", fila?.contentType === "application/pdf");

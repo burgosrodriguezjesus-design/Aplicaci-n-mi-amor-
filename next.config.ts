@@ -21,6 +21,11 @@ const nextConfig: NextConfig = {
       "./node_modules/tesseract.js-core/*.js",
       "./node_modules/tesseract.js-core/*.wasm",
       "./node_modules/@napi-rs/canvas*/**",
+      // El idioma del reconocimiento. Sin el, habria que descargarlo en cada
+      // arranque, y en un alojamiento sin disco no hay donde guardarlo.
+      "./node_modules/@tesseract.js-data/spa/4.0.0_best_int/**",
+      "./node_modules/@tesseract.js-data/spa/package.json",
+      "./node_modules/pdfjs-dist/legacy/build/**",
     ],
   },
   experimental: {

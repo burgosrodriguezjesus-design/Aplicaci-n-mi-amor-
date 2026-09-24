@@ -26,7 +26,8 @@
     "test:blob": "tsx tests/unit/blob.mts",
     "material": "node scripts/material.mjs",
     "test:almacen-db": "tsx tests/unit/almacen-db.mts",
-    "test:db-url": "tsx tests/unit/db-url.mts"
+    "test:db-url": "tsx tests/unit/db-url.mts",
+    "test:vercel": "node scripts/prueba-vercel.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

@@ -8,7 +8,7 @@
  */
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile, unlink, stat } from "node:fs/promises";
+import { mkdir, open, readFile, writeFile, unlink, stat } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -21,6 +21,8 @@ export interface StorageDriver {
   size(key: string): Promise<number>;
   delete(key: string): Promise<void>;
   exists(key: string): Promise<boolean>;
+  /** Un tramo [inicio, fin) del fichero, sin traer el resto. Opcional. */
+  getRange?(key: string, inicio: number, fin: number): Promise<Buffer>;
 }
 
 const root = path.resolve(process.cwd(), env.storage.dir);
@@ -69,6 +71,16 @@ const localDriver: StorageDriver = {
       return false;
     }
   },
+  async getRange(key, inicio, fin) {
+    const fichero = await open(resolveKey(key), "r");
+    try {
+      const tramo = Buffer.alloc(Math.max(0, fin - inicio));
+      const { bytesRead } = await fichero.read(tramo, 0, tramo.length, inicio);
+      return tramo.subarray(0, bytesRead);
+    } finally {
+      await fichero.close();
+    }
+  },
 };
 
 /**
@@ -109,6 +121,12 @@ function elegirDriver(): StorageDriver {
 }
 
 export const storage: StorageDriver = elegirDriver();
+
+/** Lee un tramo [inicio, fin) de un fichero, con el driver que sea. */
+export async function leerTramo(key: string, inicio: number, fin: number): Promise<Buffer> {
+  if (storage.getRange) return storage.getRange(key, inicio, fin);
+  return (await storage.get(key)).subarray(inicio, fin);
+}
 
 export function buildDocumentKey(userId: string, originalName: string) {
   const safeExt = path.extname(originalName).toLowerCase() === ".pdf" ? ".pdf" : ".pdf";

@@ -199,23 +199,39 @@ async function ensureLanguageData(lang: string): Promise<string | null> {
     }
   }
 
-  // 2. Copia ya descargada en el almacenamiento.
-  const cacheDir = path.resolve(process.cwd(), env.storage.dir, "tessdata");
-  if (existsSync(path.join(cacheDir, file))) return cacheDir;
+  // 2. Copia ya descargada. En alojamientos como Vercel la carpeta de la
+  //    aplicacion es de solo lectura: ahi solo se puede escribir en la
+  //    temporal, y sin esto el reconocimiento se quedaba sin idioma y las
+  //    paginas escaneadas salian vacias.
+  const carpetas = [
+    path.resolve(process.cwd(), env.storage.dir, "tessdata"),
+    path.join(os.tmpdir(), "estudia-tessdata"),
+  ];
+  for (const carpeta of carpetas) {
+    if (existsSync(path.join(carpeta, file))) return carpeta;
+  }
 
   // 3. Descarga única, con tiempo máximo y errores manejables.
+  let bytes: Buffer;
   try {
     const url = `https://cdn.jsdelivr.net/npm/@tesseract.js-data/${lang}/4.0.0_best_int/${file}`;
     const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
     if (!response.ok) return null;
-    const bytes = Buffer.from(await response.arrayBuffer());
+    bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.length < 1000) return null;
-    await mkdir(cacheDir, { recursive: true });
-    await writeFile(path.join(cacheDir, file), bytes);
-    return cacheDir;
   } catch {
     return null;
   }
+  for (const carpeta of carpetas) {
+    try {
+      await mkdir(carpeta, { recursive: true });
+      await writeFile(path.join(carpeta, file), bytes);
+      return carpeta;
+    } catch {
+      /* sin permiso de escritura aqui: se prueba en la siguiente */
+    }
+  }
+  return null;
 }
 
 async function createTesseractWorker(): Promise<TesseractWorker | null> {
@@ -241,10 +257,15 @@ async function createTesseractWorker(): Promise<TesseractWorker | null> {
     const createWorker = mod.createWorker ?? mod.default?.createWorker;
     if (!createWorker) return null;
 
+    // La copia descomprimida va a la carpeta temporal: es la unica en la que
+    // se puede escribir en cualquier alojamiento.
+    const cachePath = path.join(os.tmpdir(), "estudia-tessdata");
+    await mkdir(cachePath, { recursive: true }).catch(() => undefined);
+
     return await withTimeout(
       createWorker(lang, 1, {
         langPath,
-        cachePath: langPath,
+        cachePath,
         logger: () => undefined,
       }),
       WORKER_TIMEOUT_MS,

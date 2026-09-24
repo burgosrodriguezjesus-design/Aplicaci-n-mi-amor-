@@ -64,6 +64,25 @@ export const dbDriver: StorageDriver = {
     await prisma.storedFile.deleteMany({ where: { key } });
   },
 
+  /**
+   * Solo el tramo pedido: la base de datos lo recorta y por la red viaja
+   * ese trozo, no el PDF entero cada vez.
+   */
+  async getRange(key, inicio, fin) {
+    const largo = Math.max(0, fin - inicio);
+    let filas: { tramo: Uint8Array }[];
+    try {
+      filas = await prisma.$queryRaw<{ tramo: Uint8Array }[]>`
+        SELECT substring("data" from ${inicio + 1}::int for ${largo}::int) AS tramo
+        FROM "StoredFile" WHERE "key" = ${key}`;
+    } catch {
+      // Motor sin esa sintaxis (SQLite, al probar en casa): se lee entero.
+      return (await this.get(key)).subarray(inicio, fin);
+    }
+    if (filas.length === 0) noEncontrado(key);
+    return Buffer.from(filas[0].tramo);
+  },
+
   async exists(key) {
     const fila = await prisma.storedFile.findUnique({
       where: { key },
