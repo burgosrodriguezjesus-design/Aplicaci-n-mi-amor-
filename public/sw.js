@@ -11,7 +11,7 @@
  *    mensaje `CACHE_AUDIO`, nunca de forma automática.
  */
 
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL_CACHE = `estudia-shell-${VERSION}`;
 const STATIC_CACHE = `estudia-static-${VERSION}`;
 const AUDIO_CACHE = `estudia-audio-${VERSION}`;

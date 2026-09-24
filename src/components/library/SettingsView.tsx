@@ -210,6 +210,10 @@ export function SettingsView() {
           {user.name} · {user.email}
         </p>
       </section>
+
+      <p className="text-center text-xs" style={{ color: "var(--text-muted)" }}>
+        Versión {process.env.NEXT_PUBLIC_APP_VERSION ?? "local"}
+      </p>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { ToastProvider } from "@/components/providers/ToastProvider";
+import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 
 export const metadata: Metadata = {
   title: {
@@ -51,6 +52,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <ThemeProvider>
           <ToastProvider>{children}</ToastProvider>
+          {/* En todas las pantallas, tambien antes de entrar: asi se pone al dia. */}
+          <ServiceWorkerRegistrar />
         </ThemeProvider>
       </body>
     </html>

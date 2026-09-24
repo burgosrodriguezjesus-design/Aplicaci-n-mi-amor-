@@ -7,7 +7,6 @@ import { Icon } from "./ui/Icon";
 import { useTheme } from "./providers/ThemeProvider";
 import { PlayerProvider } from "./providers/PlayerProvider";
 import { FullPlayer, MiniPlayer } from "./player/Player";
-import { ServiceWorkerRegistrar } from "./ServiceWorkerRegistrar";
 import { InstallPrompt } from "./InstallPrompt";
 import { api } from "@/lib/client/api";
 import type { Capabilities, SessionUser } from "@/lib/client/types";
@@ -203,7 +202,6 @@ export function AppShell({
 
           <MiniPlayer />
           <FullPlayer />
-          <ServiceWorkerRegistrar />
           <InstallPrompt />
         </div>
       </PlayerProvider>

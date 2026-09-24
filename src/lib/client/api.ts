@@ -1,5 +1,7 @@
 /** Cliente HTTP del navegador con errores tipados y mensajes en castellano. */
 
+import { empiezaSubida, terminaSubida } from "./ocupado";
+
 export class ApiError extends Error {
   status: number;
   code: string;
@@ -145,6 +147,7 @@ export function uploadDocument(
     actual = xhr;
   };
 
+  empiezaSubida();
   const promise = (async () => {
     const inicio = await enviar(
       "POST",
@@ -203,7 +206,7 @@ export function uploadDocument(
     throw error instanceof ApiError
       ? error
       : new ApiError("No hemos podido subir el archivo.", 0, "UPLOAD_FAILED");
-  });
+  }).finally(terminaSubida);
 
   return {
     promise,

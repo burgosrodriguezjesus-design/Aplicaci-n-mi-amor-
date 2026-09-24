@@ -1,6 +1,17 @@
 import type { NextConfig } from "next";
 
+/**
+ * Version que lleva dentro el codigo del navegador. La aplicacion instalada
+ * la compara con la publicada para saber que tiene que recargarse.
+ */
+const version = (
+  process.env.VERCEL_GIT_COMMIT_SHA ??
+  process.env.RENDER_GIT_COMMIT ??
+  "local"
+).slice(0, 7);
+
 const nextConfig: NextConfig = {
+  env: { NEXT_PUBLIC_APP_VERSION: version },
   // pdfjs-dist y bcryptjs deben ejecutarse en Node, nunca empaquetados para el edge.
   serverExternalPackages: [
     "pdfjs-dist",
