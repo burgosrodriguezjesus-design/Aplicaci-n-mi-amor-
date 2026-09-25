@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect } from "react";
 import { Icon } from "./ui/Icon";
+import { Logo } from "./ui/Logo";
 import { useTheme } from "./providers/ThemeProvider";
 import { PlayerProvider } from "./providers/PlayerProvider";
 import { FullPlayer, MiniPlayer } from "./player/Player";
@@ -26,29 +27,16 @@ export function useSession() {
 const NAV = [
   { href: "/inicio", label: "Inicio", icon: "home" },
   { href: "/biblioteca", label: "Biblioteca", icon: "library" },
-  { href: "/subir", label: "Subir PDF", icon: "upload" },
   { href: "/ajustes", label: "Ajustes", icon: "settings" },
 ];
 
-function Logo({ compact = false }: { compact?: boolean }) {
-  return (
-    <Link href="/inicio" className="flex items-center gap-2" aria-label="alicIA, ir al inicio">
-      {/* eslint-disable-next-line @next/next/no-img-element -- icono SVG fijo */}
-      <img src="/icon.svg" alt="" width={32} height={32} className="h-8 w-8" />
-      {!compact ? (
-        <span className="text-[0.98rem] font-semibold tracking-tight">alicIA</span>
-      ) : null}
-    </Link>
-  );
-}
-
-function ThemeToggle() {
+function ThemeToggle({ className = "" }: { className?: string }) {
   const { theme, resolved, setTheme } = useTheme();
   const next = resolved === "dark" ? "light" : "dark";
   return (
     <button
       type="button"
-      className="btn btn-ghost !px-2"
+      className={`btn btn-ghost btn-icon ${className}`}
       onClick={() => setTheme(next)}
       aria-label={next === "dark" ? "Activar modo oscuro" : "Activar modo claro"}
       title={
@@ -59,8 +47,21 @@ function ThemeToggle() {
             : "Modo claro"
       }
     >
-      <Icon name={resolved === "dark" ? "sun" : "moon"} size={18} />
+      <Icon name={resolved === "dark" ? "sun" : "moon"} size={19} />
     </button>
+  );
+}
+
+/** Círculo con la inicial, en el degradado de la marca. */
+function Avatar({ name, size = 36 }: { name: string; size?: number }) {
+  return (
+    <span
+      className="flex shrink-0 items-center justify-center rounded-full font-bold text-white"
+      style={{ width: size, height: size, background: "var(--brand-grad)", fontSize: size * 0.4 }}
+      aria-hidden="true"
+    >
+      {name.slice(0, 1).toUpperCase()}
+    </span>
   );
 }
 
@@ -107,110 +108,130 @@ export function AppShell({
         <div className="flex min-h-dvh">
           {/* Navegación lateral (escritorio) */}
           <aside
-            className="sticky top-0 hidden h-dvh w-60 shrink-0 flex-col border-r px-3 py-4 md:flex"
+            className="sticky top-0 hidden h-dvh w-[17rem] shrink-0 flex-col border-r px-4 pb-4 pt-5 md:flex"
             style={{ background: "var(--bg-elevated)" }}
           >
             <div className="px-2">
               <Logo />
             </div>
 
-            <nav className="mt-6 flex flex-1 flex-col gap-0.5">
-              {/* En escritorio, "Subir PDF" ya tiene su propio boton destacado. */}
-              {NAV.filter((item) => item.href !== "/subir").map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="flex items-center gap-2.5 rounded-[0.7rem] px-2.5 py-2 text-[0.87rem] font-medium transition"
-                  style={
-                    isActive(item.href)
-                      ? { background: "var(--accent-soft)", color: "var(--accent)" }
-                      : { color: "var(--text-soft)" }
-                  }
-                >
-                  <Icon name={item.icon} size={18} />
-                  {item.label}
-                </Link>
-              ))}
+            <Link href="/subir" className="btn btn-primary btn-lg mt-7 w-full">
+              <Icon name="plus" size={19} strokeWidth={2.4} />
+              Subir PDF
+            </Link>
 
-              <Link
-                href="/subir"
-                className="btn btn-primary mt-4 w-full"
-                style={{ justifyContent: "flex-start" }}
-              >
-                <Icon name="plus" size={16} />
-                Subir nuevo PDF
-              </Link>
+            <nav className="mt-7 flex flex-1 flex-col gap-1" aria-label="Principal">
+              <p className="eyebrow mb-1.5 px-3">Tu estudio</p>
+              {NAV.map((item) => {
+                const activo = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={activo ? "page" : undefined}
+                    className="group flex min-h-11 items-center gap-3 rounded-xl px-3 text-[0.92rem] font-semibold transition"
+                    style={
+                      activo
+                        ? { background: "var(--accent-soft)", color: "var(--accent)" }
+                        : { color: "var(--text-soft)" }
+                    }
+                  >
+                    <Icon name={item.icon} size={20} strokeWidth={activo ? 2.1 : 1.8} />
+                    <span className={activo ? "" : "group-hover:text-[var(--text)]"}>{item.label}</span>
+                  </Link>
+                );
+              })}
             </nav>
 
-            <div className="border-t pt-3">
-              <div className="flex items-center gap-2 px-1">
-                <span
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold"
-                  style={{ background: "var(--bg-sunken)", color: "var(--text-soft)" }}
-                >
-                  {user.name.slice(0, 1).toUpperCase()}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[0.8rem] font-medium">{user.name}</p>
-                  <p className="truncate text-[0.7rem]" style={{ color: "var(--text-muted)" }}>
-                    {user.email}
-                  </p>
-                </div>
-                <ThemeToggle />
-                <button
-                  type="button"
-                  className="btn btn-ghost !px-2"
-                  onClick={logout}
-                  aria-label="Cerrar sesión"
-                  title="Cerrar sesión"
-                >
-                  <Icon name="logout" size={18} />
-                </button>
+            <div className="card-soft flex items-center gap-2.5 p-2.5">
+              <Avatar name={user.name} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[0.86rem] font-bold">{user.name}</p>
+                <p className="truncate text-[0.72rem]" style={{ color: "var(--text-muted)" }}>
+                  {user.email}
+                </p>
               </div>
+              <ThemeToggle className="!min-h-9 !min-w-9" />
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon !min-h-9 !min-w-9"
+                onClick={logout}
+                aria-label="Cerrar sesión"
+                title="Cerrar sesión"
+              >
+                <Icon name="logout" size={18} />
+              </button>
             </div>
           </aside>
 
           <div className="flex min-w-0 flex-1 flex-col">
             {/* Barra superior (móvil) */}
             <header
-              className="sticky top-0 z-30 flex items-center justify-between border-b px-4 py-2.5 md:hidden"
-              style={{ background: "color-mix(in srgb, var(--bg) 88%, transparent)", backdropFilter: "blur(10px)" }}
+              className="safe-top sticky top-0 z-30 border-b md:hidden"
+              style={{ background: "var(--glass)", backdropFilter: "saturate(180%) blur(16px)" }}
             >
-              <Logo />
-              <div className="flex items-center">
-                <ThemeToggle />
-                <button
-                  type="button"
-                  className="btn btn-ghost !px-2"
-                  onClick={logout}
-                  aria-label="Cerrar sesión"
-                >
-                  <Icon name="logout" size={18} />
-                </button>
+              <div className="flex h-14 items-center justify-between px-4">
+                <Logo size={30} />
+                <div className="flex items-center gap-0.5">
+                  <ThemeToggle />
+                  <Link
+                    href="/ajustes"
+                    className="btn btn-ghost btn-icon"
+                    aria-label="Ajustes"
+                    style={isActive("/ajustes") ? { color: "var(--accent)", background: "var(--accent-soft)" } : undefined}
+                  >
+                    <Icon name="settings" size={20} />
+                  </Link>
+                </div>
               </div>
             </header>
 
-            <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-40 pt-5 md:px-8 md:pb-28 md:pt-8">
+            <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-44 pt-6 sm:px-6 md:px-10 md:pb-28 md:pt-10">
               {children}
             </main>
           </div>
 
-          {/* Navegación inferior (móvil) */}
+          {/* Navegación inferior (móvil): Inicio · Subir · Biblioteca */}
           <nav
-            className="safe-bottom fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t md:hidden"
-            style={{ background: "color-mix(in srgb, var(--bg-elevated) 94%, transparent)", backdropFilter: "blur(12px)" }}
+            className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t md:hidden"
+            style={{ background: "var(--glass)", backdropFilter: "saturate(180%) blur(18px)" }}
+            aria-label="Principal"
           >
-            {NAV.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className="flex flex-col items-center gap-0.5 py-2 text-[0.66rem] font-medium transition"
-                style={{ color: isActive(item.href) ? "var(--accent)" : "var(--text-muted)" }}
-              >
-                <Icon name={item.icon} size={20} />
-                {item.label}
-              </Link>
-            ))}
+            <div className="mx-auto grid h-[4.35rem] max-w-md grid-cols-3 items-center px-6">
+              {[NAV[0], null, NAV[1]].map((item) =>
+                item ? (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    aria-current={isActive(item.href) ? "page" : undefined}
+                    className="flex flex-col items-center gap-1 py-1 text-[0.7rem] font-semibold transition"
+                    style={{ color: isActive(item.href) ? "var(--accent)" : "var(--text-muted)" }}
+                  >
+                    <Icon name={item.icon} size={23} strokeWidth={isActive(item.href) ? 2.2 : 1.8} />
+                    {item.label}
+                  </Link>
+                ) : (
+                  <Link
+                    key="subir"
+                    href="/subir"
+                    className="mx-auto -mt-7 flex flex-col items-center gap-1 text-[0.7rem] font-bold"
+                    style={{ color: isActive("/subir") ? "var(--accent)" : "var(--text-soft)" }}
+                    aria-label="Subir PDF"
+                  >
+                    <span
+                      className="flex h-[3.6rem] w-[3.6rem] items-center justify-center rounded-[1.25rem] text-white transition active:scale-95"
+                      style={{
+                        background: "var(--brand-grad)",
+                        boxShadow: "0 12px 24px -10px rgba(122,80,240,0.85), 0 0 0 5px var(--bg-elevated)",
+                      }}
+                    >
+                      <Icon name="plus" size={28} strokeWidth={2.4} />
+                    </span>
+                    Subir
+                  </Link>
+                ),
+              )}
+            </div>
           </nav>
 
           <MiniPlayer />

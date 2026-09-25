@@ -138,33 +138,36 @@ export function LibraryView() {
   };
 
   return (
-    <div className="animate-in space-y-5">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+    <div className="animate-in space-y-6">
+      <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Biblioteca</h1>
-          <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-            Todo tu material, organizado por asignaturas y temas.
-          </p>
+          <p className="eyebrow">Tu material</p>
+          <h1 className="page-title mt-2">Biblioteca</h1>
+          <p className="page-subtitle">Todo tu material, organizado por asignaturas y temas.</p>
         </div>
-        <Link href="/subir" className="btn btn-primary">
-          <Icon name="plus" size={16} />
+        <Link href="/subir" className="btn btn-primary hidden sm:inline-flex">
+          <Icon name="plus" size={18} strokeWidth={2.3} />
           Subir PDF
         </Link>
       </header>
 
-      <div className="segmented">
+      <div className="segmented w-full sm:w-auto">
         <button
           type="button"
+          className="flex-1 sm:flex-none"
           data-active={tab === "documents"}
           onClick={() => setTab("documents")}
         >
+          <Icon name="file" size={16} />
           Documentos
         </button>
         <button
           type="button"
+          className="flex-1 sm:flex-none"
           data-active={tab === "subjects"}
           onClick={() => setTab("subjects")}
         >
+          <Icon name="folder" size={16} />
           Asignaturas
         </button>
       </div>
@@ -174,13 +177,13 @@ export function LibraryView() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div className="relative flex-1">
               <span
-                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2"
+                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2"
                 style={{ color: "var(--text-muted)" }}
               >
-                <Icon name="search" size={16} />
+                <Icon name="search" size={18} />
               </span>
               <input
-                className="input pl-9"
+                className="input !pl-11"
                 placeholder="Buscar en tus documentos…"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -188,7 +191,7 @@ export function LibraryView() {
               />
             </div>
             <select
-              className="input sm:w-48"
+              className="input sm:!w-56"
               value={sort}
               onChange={(event) => setSort(event.target.value as Sort)}
               aria-label="Ordenar por"
@@ -202,16 +205,12 @@ export function LibraryView() {
           </div>
 
           {subjects.length ? (
-            <div className="flex flex-wrap gap-1.5">
+            <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:flex-wrap sm:px-0">
               <button
                 type="button"
-                className="chip"
+                className="filter-chip"
                 onClick={() => setSubjectFilter("")}
-                style={
-                  subjectFilter === ""
-                    ? { background: "var(--accent-soft)", color: "var(--accent)", borderColor: "var(--accent)" }
-                    : undefined
-                }
+                data-active={subjectFilter === ""}
               >
                 Todas
               </button>
@@ -219,13 +218,9 @@ export function LibraryView() {
                 <button
                   key={subject.id}
                   type="button"
-                  className="chip"
+                  className="filter-chip"
                   onClick={() => setSubjectFilter(subject.id)}
-                  style={
-                    subjectFilter === subject.id
-                      ? { background: "var(--accent-soft)", color: "var(--accent)", borderColor: "var(--accent)" }
-                      : undefined
-                  }
+                  data-active={subjectFilter === subject.id}
                 >
                   {subject.emoji} {subject.name}
                 </button>
@@ -257,7 +252,7 @@ export function LibraryView() {
               }
             />
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="stagger grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
               {sorted.map((item) => (
                 <DocumentCard key={item.id} document={item} onDelete={setPendingDelete} />
               ))}
@@ -266,8 +261,18 @@ export function LibraryView() {
         </>
       ) : (
         <div className="space-y-4">
-          <form onSubmit={createSubject} className="card space-y-3 p-4">
-            <h2 className="text-sm font-semibold">Nueva asignatura</h2>
+          <form onSubmit={createSubject} className="card space-y-4 p-5">
+            <div className="flex items-center gap-3">
+              <span className="icon-tile !h-10 !w-10">
+                <Icon name="folder" size={19} />
+              </span>
+              <div>
+                <h2 className="text-[0.98rem] font-bold">Nueva asignatura</h2>
+                <p className="text-[0.8rem]" style={{ color: "var(--text-muted)" }}>
+                  Ponle nombre, un icono y un color.
+                </p>
+              </div>
+            </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <input
                 className="input sm:flex-1"
@@ -276,6 +281,7 @@ export function LibraryView() {
                 onChange={(event) => setNewSubject(event.target.value)}
               />
               <button type="submit" className="btn btn-primary">
+                <Icon name="plus" size={17} strokeWidth={2.3} />
                 Crear
               </button>
             </div>
@@ -285,7 +291,7 @@ export function LibraryView() {
                   key={emoji}
                   type="button"
                   onClick={() => setNewEmoji(emoji)}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border transition"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border text-lg transition"
                   style={
                     newEmoji === emoji
                       ? { borderColor: "var(--accent)", background: "var(--accent-soft)" }
@@ -303,10 +309,10 @@ export function LibraryView() {
                   key={color}
                   type="button"
                   onClick={() => setNewColor(color)}
-                  className="h-7 w-7 rounded-full border-2 transition"
+                  className="h-9 w-9 rounded-full transition"
                   style={{
                     background: color,
-                    borderColor: newColor === color ? "var(--text)" : "transparent",
+                    boxShadow: newColor === color ? `0 0 0 3px var(--surface), 0 0 0 5px ${color}` : "none",
                   }}
                   aria-label={`Color ${color}`}
                 />
@@ -322,16 +328,16 @@ export function LibraryView() {
             />
           ) : (
             subjects.map((subject) => (
-              <section key={subject.id} className="card p-4">
-                <div className="flex items-center gap-2">
+              <section key={subject.id} className="card p-5">
+                <div className="flex items-center gap-3">
                   <span
-                    className="flex h-9 w-9 items-center justify-center rounded-xl"
+                    className="flex h-11 w-11 items-center justify-center rounded-2xl text-lg"
                     style={{ background: `color-mix(in srgb, ${subject.color} 16%, transparent)` }}
                   >
                     {subject.emoji}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-[0.95rem] font-semibold">{subject.name}</h3>
+                    <h3 className="truncate text-[1rem] font-bold">{subject.name}</h3>
                     <p className="text-xs" style={{ color: "var(--text-muted)" }}>
                       {subject._count.documents}{" "}
                       {subject._count.documents === 1 ? "documento" : "documentos"}
@@ -339,7 +345,7 @@ export function LibraryView() {
                   </div>
                   <button
                     type="button"
-                    className="btn btn-ghost !px-2"
+                    className="btn btn-ghost btn-icon"
                     onClick={() => deleteSubject(subject.id)}
                     aria-label={`Eliminar la asignatura ${subject.name}`}
                     title="Eliminar asignatura (los documentos no se borran)"
@@ -348,16 +354,16 @@ export function LibraryView() {
                   </button>
                 </div>
 
-                <div className="mt-3 space-y-2 pl-3" style={{ borderLeft: "2px solid var(--border)" }}>
+                <div className="mt-4 space-y-3 pl-4" style={{ borderLeft: `2px solid color-mix(in srgb, ${subject.color} 35%, var(--border))` }}>
                   {subject.topics.map((topic) => (
                     <div key={topic.id}>
-                      <p className="text-[0.85rem] font-medium">{topic.name}</p>
+                      <p className="text-[0.88rem] font-bold">{topic.name}</p>
                       <ul className="mt-1 space-y-0.5">
                         {topic.documents.map((document) => (
                           <li key={document.id}>
                             <Link
                               href={`/documento/${document.id}`}
-                              className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[0.82rem] transition hover:bg-[var(--surface-hover)]"
+                              className="flex min-h-9 items-center gap-2 rounded-lg px-2 text-[0.86rem] transition hover:bg-[var(--surface-hover)]"
                               style={{ color: "var(--text-soft)" }}
                             >
                               <Icon name="file" size={13} />
@@ -376,7 +382,7 @@ export function LibraryView() {
 
                   <div className="flex gap-2 pt-1">
                     <input
-                      className="input !py-1.5 text-[0.82rem]"
+                      className="input !min-h-10 !py-2 text-[0.86rem]"
                       placeholder="Nuevo tema (Tema 1, Tema 2…)"
                       value={newTopic[subject.id] ?? ""}
                       onChange={(event) =>
@@ -394,10 +400,11 @@ export function LibraryView() {
                     />
                     <button
                       type="button"
-                      className="btn btn-secondary"
+                      className="btn btn-secondary !min-h-10"
                       onClick={() => createTopic(subject.id)}
                     >
-                      <Icon name="plus" size={15} />
+                      <Icon name="plus" size={16} />
+                      Tema
                     </button>
                   </div>
                 </div>
@@ -417,6 +424,7 @@ export function LibraryView() {
               Cancelar
             </button>
             <button type="button" className="btn btn-danger" onClick={confirmDelete}>
+              <Icon name="trash" size={16} />
               Eliminar
             </button>
           </>

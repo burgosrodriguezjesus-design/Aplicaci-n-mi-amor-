@@ -80,7 +80,7 @@ export function PdfTab({
         <div className="flex items-center gap-1">
           <button
             type="button"
-            className="btn btn-secondary !px-2"
+            className="btn btn-secondary btn-icon"
             onClick={() => onPageChange(Math.max(1, page - 1))}
             disabled={page <= 1}
             aria-label="Página anterior"
@@ -93,7 +93,7 @@ export function PdfTab({
           </span>
           <button
             type="button"
-            className="btn btn-secondary !px-2"
+            className="btn btn-secondary btn-icon"
             onClick={() => onPageChange(Math.min(pageCount || page + 1, page + 1))}
             disabled={pageCount > 0 && page >= pageCount}
             aria-label="Página siguiente"
@@ -113,7 +113,7 @@ export function PdfTab({
         </a>
       </div>
 
-      <div className="card relative overflow-hidden" style={{ height: "min(75vh, 900px)" }}>
+      <div className="card relative overflow-hidden" style={{ height: "min(78vh, 1000px)", background: "var(--bg-sunken)" }}>
         {loading && !error ? (
           <div className="skeleton absolute inset-0" aria-hidden="true" />
         ) : null}

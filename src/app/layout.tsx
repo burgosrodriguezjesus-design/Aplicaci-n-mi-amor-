@@ -1,8 +1,24 @@
 import type { Metadata, Viewport } from "next";
+import { Literata, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/providers/ThemeProvider";
 import { ToastProvider } from "@/components/providers/ToastProvider";
 import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
+
+/** Interfaz: moderna y muy legible en pantallas pequeñas. */
+const fuenteUi = Plus_Jakarta_Sans({
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-ui",
+  display: "swap",
+});
+
+/** Lectura del material: pensada para leer mucho rato sin cansarse. */
+const fuenteLectura = Literata({
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-read",
+  display: "swap",
+  style: ["normal", "italic"],
+});
 
 export const metadata: Metadata = {
   title: {
@@ -26,8 +42,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#faf9f7" },
-    { media: "(prefers-color-scheme: dark)", color: "#0d0d10" },
+    { media: "(prefers-color-scheme: light)", color: "#f7f7fb" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b0b10" },
   ],
 };
 
@@ -39,15 +55,9 @@ const themeScript = `(function(){try{var t=localStorage.getItem("estudia-theme")
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="es" suppressHydrationWarning>
+    <html lang="es" suppressHydrationWarning className={`${fuenteUi.variable} ${fuenteLectura.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap"
-        />
       </head>
       <body>
         <ThemeProvider>

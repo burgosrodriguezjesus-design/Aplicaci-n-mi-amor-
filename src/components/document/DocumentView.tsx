@@ -8,7 +8,7 @@ import { empujarTrabajo } from "@/lib/client/jobs";
 import type { DocumentDetail } from "@/lib/client/types";
 import { STATUS_COPY, formatBytes, formatRelative } from "@/lib/client/format";
 import { Icon } from "@/components/ui/Icon";
-import { ErrorNotice, ProgressBar, Skeleton } from "@/components/ui/Primitives";
+import { DocCover, ErrorNotice, ProgressRing, Skeleton } from "@/components/ui/Primitives";
 import { useToast } from "@/components/providers/ToastProvider";
 import { usePlayer } from "@/components/providers/PlayerProvider";
 import { SummaryTab } from "./SummaryTab";
@@ -20,10 +20,10 @@ import { RegenerateDialog } from "./RegenerateDialog";
 type Tab = "pdf" | "summary" | "outline" | "audio";
 
 const TABS: { value: Tab; label: string; icon: string }[] = [
-  { value: "pdf", label: "PDF original", icon: "file" },
   { value: "summary", label: "Resumen", icon: "book" },
-  { value: "outline", label: "Esquema", icon: "brain" },
+  { value: "outline", label: "Esquema", icon: "outline" },
   { value: "audio", label: "Audio", icon: "headphones" },
+  { value: "pdf", label: "PDF", icon: "file" },
 ];
 
 /** Cada cuántos segundos se envía el tiempo de estudio acumulado. */
@@ -278,67 +278,76 @@ export function DocumentView({ documentId }: { documentId: string }) {
 
   return (
     <div className="animate-in space-y-5">
-      <header className="space-y-2">
+      <header className="space-y-4">
         <Link
           href="/biblioteca"
-          className="inline-flex items-center gap-1 text-[0.8rem]"
+          className="btn btn-ghost btn-sm -ml-2 !gap-1 !px-2"
           style={{ color: "var(--text-muted)" }}
         >
-          <Icon name="chevronLeft" size={14} />
+          <Icon name="chevronLeft" size={17} />
           Biblioteca
         </Link>
 
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+        <div className="flex items-start gap-4 sm:gap-5">
+          <DocCover title={document_.title} size="lg" className="hidden sm:flex" />
+          <DocCover title={document_.title} className="sm:hidden" />
+          <div className="min-w-0 flex-1">
+            {document_.subject ? (
+              <p className="eyebrow !normal-case !tracking-normal">
+                {document_.subject.emoji} {document_.subject.name}
+                {document_.topic ? ` · ${document_.topic.name}` : ""}
+              </p>
+            ) : null}
+            <h1 className="mt-1 line-clamp-3 text-[1.45rem] font-extrabold leading-tight tracking-[-0.03em] sm:text-[1.95rem]">
               {document_.title}
             </h1>
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" style={{ color: "var(--text-muted)" }}>
-              {document_.subject ? (
-                <span>
-                  {document_.subject.emoji} {document_.subject.name}
-                  {document_.topic ? ` · ${document_.topic.name}` : ""}
-                </span>
-              ) : null}
-              <span>
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+              <span className="chip">
+                <Icon name="file" size={12} strokeWidth={2} />
                 {document_.pageCount} {document_.pageCount === 1 ? "página" : "páginas"}
               </span>
-              <span>{formatBytes(document_.sizeBytes)}</span>
-              <span>{formatRelative(document_.createdAt)}</span>
-              {document_.usedOcr ? <span className="chip">OCR</span> : null}
-            </p>
+              <span className="chip">{formatBytes(document_.sizeBytes)}</span>
+              <span className="chip">
+                <Icon name="clock" size={12} strokeWidth={2} />
+                {formatRelative(document_.createdAt)}
+              </span>
+              {document_.usedOcr ? (
+                <span className="chip chip-accent" title="Se ha leído con reconocimiento de texto">
+                  <Icon name="scan" size={12} strokeWidth={2} />
+                  Escaneado
+                </span>
+              ) : null}
+            </div>
           </div>
         </div>
       </header>
 
       {processing ? (
-        <div className="card space-y-2 p-4">
-          <div className="flex items-center justify-between text-[0.85rem]">
-            <span className="animate-pulse-soft font-medium" style={{ color: "var(--accent)" }}>
+        <div className="card flex items-center gap-4 p-4 sm:p-5">
+          <ProgressRing value={document_.processingProgress} size={56} stroke={5} />
+          <div className="min-w-0 flex-1">
+            <p className="animate-pulse-soft text-[0.92rem] font-bold" style={{ color: "var(--accent)" }}>
               {document_.statusMessage || STATUS_COPY[document_.status]}
-            </span>
-            <span className="tabular-nums" style={{ color: "var(--text-muted)" }}>
-              {document_.processingProgress} %
-            </span>
+            </p>
+            <p className="mt-1 text-[0.8rem] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+              {document_.pageCount > 80
+                ? `Son ${document_.pageCount} páginas: puede tardar unos minutos. `
+                : ""}
+              {detail.document.pdfEnDispositivo
+                ? "Deja la app abierta mientras se lee: este PDF solo está en tu dispositivo."
+                : "Puedes cerrar la app: se termina solo en el servidor. Con la app abierta va más rápido, porque tu dispositivo también lee."}
+            </p>
           </div>
-          <ProgressBar value={document_.processingProgress} />
-          <p className="text-[0.75rem]" style={{ color: "var(--text-muted)" }}>
-            {document_.pageCount > 80
-              ? `Son ${document_.pageCount} páginas: puede tardar unos minutos. `
-              : ""}
-            {detail.document.pdfEnDispositivo
-              ? "Deja la app abierta mientras se lee: este PDF solo está en tu dispositivo."
-              : "Puedes cerrar la app: se termina solo en el servidor. Con la app abierta va más rápido, porque tu dispositivo también lee."}
-          </p>
         </div>
       ) : null}
 
       {document_.errorCode === "OCR_PARTIAL" && document_.errorMessage ? (
         <div
-          className="card p-3 text-[0.8rem]"
-          style={{ background: "var(--warning-soft)", borderColor: "transparent" }}
+          className="flex items-start gap-2.5 rounded-2xl px-4 py-3 text-[0.86rem] leading-relaxed"
+          style={{ background: "var(--warning-soft)", color: "var(--text-soft)" }}
         >
-          {document_.errorMessage}
+          <Icon name="warning" size={17} className="mt-0.5 shrink-0" />
+          <span>{document_.errorMessage}</span>
         </div>
       ) : null}
 
@@ -353,42 +362,43 @@ export function DocumentView({ documentId }: { documentId: string }) {
 
       {document_.textCoverage > 0 && document_.textCoverage < 60 ? (
         <div
-          className="card p-3 text-[0.8rem]"
-          style={{ background: "var(--warning-soft)", borderColor: "transparent" }}
+          className="rounded-2xl px-4 py-3 text-[0.86rem] leading-relaxed"
+          style={{ background: "var(--warning-soft)", color: "var(--text-soft)" }}
         >
           Solo hemos podido leer texto en el {document_.textCoverage} % de las páginas. Las
           páginas escaneadas sin texto reconocible no aparecen en el resumen.
           {document_.status === "READY" || document_.status === "FAILED" ? (
             <button
               type="button"
-              className="btn btn-secondary mt-2 w-full"
+              className="btn btn-secondary mt-3 w-full"
               onClick={releerEscaneadas}
               disabled={releyendo}
             >
+              <Icon name="scan" size={17} />
               {releyendo ? "Preparando…" : "Volver a leer las páginas escaneadas"}
             </button>
           ) : null}
         </div>
       ) : null}
 
-      {/* Pestañas */}
+      {/* Pestañas: fijas arriba al desplazarse */}
       <nav
-        className="sticky top-0 z-20 -mx-4 overflow-x-auto px-4 py-2 md:mx-0 md:px-0"
-        style={{
-          background: "color-mix(in srgb, var(--bg) 92%, transparent)",
-          backdropFilter: "blur(8px)",
-        }}
+        className="sticky top-[calc(3.5rem+env(safe-area-inset-top,0px))] z-20 -mx-4 px-4 sm:-mx-6 sm:px-6 md:top-0 md:-mx-10 md:px-10"
+        style={{ background: "var(--glass)", backdropFilter: "saturate(180%) blur(16px)" }}
+        aria-label="Secciones del documento"
       >
-        <div className="segmented">
+        <div className="tabs no-scrollbar" role="tablist">
           {TABS.map((item) => (
             <button
               key={item.value}
               type="button"
+              role="tab"
+              aria-selected={tab === item.value}
               data-active={tab === item.value}
               onClick={() => changeTab(item.value)}
-              className="flex items-center gap-1.5"
+              className="tab flex-1 justify-center sm:flex-none"
             >
-              <Icon name={item.icon} size={14} />
+              <Icon name={item.icon} size={18} strokeWidth={tab === item.value ? 2.2 : 1.8} />
               {item.label}
             </button>
           ))}

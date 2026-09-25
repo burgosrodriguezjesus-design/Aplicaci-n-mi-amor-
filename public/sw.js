@@ -11,10 +11,11 @@
  *    mensaje `CACHE_AUDIO`, nunca de forma automática.
  */
 
-const VERSION = "v4";
+const VERSION = "v5";
 const SHELL_CACHE = `estudia-shell-${VERSION}`;
 const STATIC_CACHE = `estudia-static-${VERSION}`;
-const AUDIO_CACHE = `estudia-audio-${VERSION}`;
+// Los audios descargados no dependen del diseño: se conservan entre versiones.
+const AUDIO_CACHE = "estudia-audio-v4";
 
 const SHELL_ASSETS = ["/inicio", "/biblioteca", "/subir", "/icon.svg", "/manifest.webmanifest"];
 
@@ -34,7 +35,7 @@ self.addEventListener("activate", (event) => {
       .then((keys) =>
         Promise.all(
           keys
-            .filter((key) => !key.endsWith(VERSION))
+            .filter((key) => !key.endsWith(VERSION) && key !== AUDIO_CACHE)
             .map((key) => caches.delete(key)),
         ),
       )

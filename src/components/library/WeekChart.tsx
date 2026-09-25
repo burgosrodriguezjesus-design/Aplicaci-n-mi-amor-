@@ -33,7 +33,7 @@ export function WeekChart({
           Aún no has estudiado esta semana.
         </p>
       ) : null}
-      <div className="flex h-28 items-end gap-1.5" role="img" aria-label="Minutos de estudio por día en la última semana">
+      <div className="flex h-32 items-end gap-2" role="img" aria-label="Minutos de estudio por día en la última semana">
         {data.map((entry, index) => {
           const total = totals[index];
           const height = hasData ? Math.max(total > 0 ? 6 : 2, (total / max) * 100) : 2;
@@ -66,7 +66,7 @@ export function WeekChart({
                   tabIndex={0}
                   title={label}
                   aria-label={label}
-                  className="w-full rounded-t-[4px] transition-[height] duration-500"
+                  className="w-full rounded-[7px] transition-[height] duration-500"
                   style={{
                     height: `${height}%`,
                     background:

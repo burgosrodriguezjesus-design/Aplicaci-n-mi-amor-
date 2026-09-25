@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Icon } from "./ui/Icon";
+import { LogoMark } from "./ui/Logo";
 
 /**
  * Invitacion a instalar alicIA como aplicacion.
@@ -93,28 +94,22 @@ export function InstallPrompt() {
   return (
     <div
       className="fixed inset-x-0 z-40 px-4"
-      style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 5.5rem)" }}
+      style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 6.2rem)" }}
       role="complementary"
       aria-label="Instalar alicIA"
     >
       <div
-        className="mx-auto flex max-w-xl items-start gap-3 rounded-2xl border p-3 shadow-lg"
+        className="mx-auto flex max-w-xl items-start gap-3.5 rounded-[1.25rem] border p-4 shadow-lg"
         style={{
           background: "var(--surface)",
           borderColor: "var(--border)",
           boxShadow: "var(--shadow-lg)",
         }}
       >
-        <span
-          className="flex h-10 w-10 flex-none items-center justify-center rounded-xl text-base font-bold"
-          style={{ background: "var(--accent)", color: "var(--accent-text)" }}
-          aria-hidden
-        >
-          E
-        </span>
+        <LogoMark size={44} />
 
         <div className="min-w-0 flex-1">
-          <p className="text-[0.92rem] font-semibold">Ten alicIA a mano</p>
+          <p className="text-[0.98rem] font-bold">Ten alicIA a mano</p>
           {instrucciones ? (
             <p className="mt-0.5 text-[0.82rem]" style={{ color: "var(--text-soft)" }}>
               Toca <strong>Compartir</strong> abajo y luego{" "}
@@ -133,17 +128,16 @@ export function InstallPrompt() {
               <button
                 type="button"
                 onClick={instalar}
-                className="rounded-lg px-3 py-1.5 text-[0.85rem] font-medium"
-                style={{ background: "var(--accent)", color: "var(--accent-text)" }}
+                className="btn btn-primary btn-sm"
               >
+                <Icon name="download" size={16} />
                 Instalar
               </button>
             ) : null}
             <button
               type="button"
               onClick={descartar}
-              className="rounded-lg px-3 py-1.5 text-[0.85rem]"
-              style={{ color: "var(--text-soft)" }}
+              className="btn btn-ghost btn-sm"
             >
               Ahora no
             </button>
@@ -154,10 +148,10 @@ export function InstallPrompt() {
           type="button"
           onClick={descartar}
           aria-label="Cerrar"
-          className="flex-none rounded-lg p-1"
+          className="btn btn-ghost btn-icon !min-h-9 !min-w-9 flex-none"
           style={{ color: "var(--text-muted)" }}
         >
-          <Icon name="close" />
+          <Icon name="close" size={18} />
         </button>
       </div>
     </div>

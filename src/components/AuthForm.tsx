@@ -46,71 +46,85 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     }
   };
 
+  const [verClave, setVerClave] = useState(false);
+
   return (
     <div className="animate-in">
-      <div className="mb-6 text-center">
-        <span
-          className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-2xl text-lg font-bold"
-          style={{ background: "var(--accent)", color: "var(--accent-text)" }}
-        >
-          E
-        </span>
-        <h1 className="text-xl font-semibold tracking-tight">
-          {isRegister ? "Crea tu cuenta" : "Bienvenido de nuevo"}
+      <div className="mb-7 text-center lg:text-left">
+        <h1 className="text-[1.75rem] font-extrabold tracking-[-0.03em]">
+          {isRegister ? "Crea tu cuenta" : "Hola de nuevo"}
         </h1>
-        <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+        <p className="mt-1.5 text-[0.95rem]" style={{ color: "var(--text-muted)" }}>
           {isRegister
-            ? "Tu progreso se guardará y se sincronizará entre dispositivos."
+            ? "Gratis. Tu progreso se guarda y se sincroniza entre dispositivos."
             : "Entra para seguir estudiando donde lo dejaste."}
         </p>
       </div>
 
-      <form onSubmit={submit} className="card space-y-3 p-5">
+      <form onSubmit={submit} className="card space-y-4 p-5 sm:p-7" style={{ boxShadow: "var(--shadow-md)" }}>
         {isRegister ? (
           <label className="block">
-            <span className="mb-1.5 block text-[0.78rem] font-medium">Nombre</span>
-            <input
-              className="input"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Tu nombre"
-              autoComplete="name"
-              required
-              minLength={2}
-            />
+            <span className="label">Nombre</span>
+            <span className="relative block">
+              <Icon name="user" size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+              <input
+                className="input !pl-11"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Tu nombre"
+                autoComplete="name"
+                required
+                minLength={2}
+              />
+            </span>
           </label>
         ) : null}
 
         <label className="block">
-          <span className="mb-1.5 block text-[0.78rem] font-medium">Correo electrónico</span>
-          <input
-            className="input"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="tucorreo@ejemplo.com"
-            autoComplete="email"
-            required
-          />
+          <span className="label">Correo electrónico</span>
+          <span className="relative block">
+            <Icon name="mail" size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+            <input
+              className="input !pl-11"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="tucorreo@ejemplo.com"
+              autoComplete="email"
+              required
+            />
+          </span>
         </label>
 
         <label className="block">
-          <span className="mb-1.5 block text-[0.78rem] font-medium">Contraseña</span>
-          <input
-            className="input"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder={isRegister ? "Mínimo 8 caracteres" : "Tu contraseña"}
-            autoComplete={isRegister ? "new-password" : "current-password"}
-            required
-            minLength={isRegister ? 8 : 1}
-          />
+          <span className="label">Contraseña</span>
+          <span className="relative block">
+            <Icon name="lock" size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" />
+            <input
+              className="input !pl-11 !pr-12"
+              type={verClave ? "text" : "password"}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder={isRegister ? "Mínimo 8 caracteres" : "Tu contraseña"}
+              autoComplete={isRegister ? "new-password" : "current-password"}
+              required
+              minLength={isRegister ? 8 : 1}
+            />
+            <button
+              type="button"
+              className="btn btn-ghost btn-icon absolute right-1 top-1/2 !min-h-9 !min-w-9 -translate-y-1/2"
+              onClick={() => setVerClave((actual) => !actual)}
+              aria-label={verClave ? "Ocultar contraseña" : "Mostrar contraseña"}
+              title={verClave ? "Ocultar contraseña" : "Mostrar contraseña"}
+            >
+              <Icon name="eye" size={18} />
+            </button>
+          </span>
         </label>
 
         {isRegister ? (
           <label className="block">
-            <span className="mb-1.5 block text-[0.78rem] font-medium">Nivel educativo</span>
+            <span className="label">Nivel educativo</span>
             <select
               className="input"
               value={level}
@@ -127,27 +141,28 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 
         {error ? (
           <p
-            className="flex items-start gap-2 rounded-[0.7rem] px-3 py-2 text-[0.82rem]"
+            className="flex items-start gap-2 rounded-xl px-3.5 py-2.5 text-[0.86rem] font-medium"
             style={{ background: "var(--danger-soft)", color: "var(--danger)" }}
           >
-            <Icon name="warning" size={15} />
+            <Icon name="warning" size={17} className="mt-px shrink-0" />
             {error}
           </p>
         ) : null}
 
-        <button type="submit" className="btn btn-primary w-full" disabled={loading}>
+        <button type="submit" className="btn btn-primary btn-lg w-full" disabled={loading}>
           {loading ? "Un momento…" : isRegister ? "Crear cuenta" : "Entrar"}
+          {!loading ? <Icon name="arrowRight" size={19} /> : null}
         </button>
       </form>
 
-      <p className="mt-4 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+      <p className="mt-6 text-center text-[0.92rem]" style={{ color: "var(--text-muted)" }}>
         {isRegister ? "¿Ya tienes cuenta? " : "¿Aún no tienes cuenta? "}
         <Link
           href={isRegister ? "/login" : "/registro"}
-          className="font-medium"
+          className="font-bold underline-offset-4 hover:underline"
           style={{ color: "var(--accent)" }}
         >
-          {isRegister ? "Entrar" : "Crear una"}
+          {isRegister ? "Entrar" : "Crea una gratis"}
         </Link>
       </p>
     </div>

@@ -24,7 +24,7 @@ import {
 } from "@/lib/client/format";
 import type { DocumentStatus, Subject } from "@/lib/client/types";
 import { Icon } from "@/components/ui/Icon";
-import { ProgressBar, ErrorNotice } from "@/components/ui/Primitives";
+import { DocCover, ErrorNotice, ProgressBar, ProgressRing } from "@/components/ui/Primitives";
 import { useSession } from "@/components/AppShell";
 import { useToast } from "@/components/providers/ToastProvider";
 
@@ -242,38 +242,56 @@ export function UploadZone() {
             pickFile(event.dataTransfer.files?.[0]);
           }}
           onClick={() => inputRef.current?.click()}
-          className="card card-interactive flex cursor-pointer flex-col items-center gap-3 px-6 py-14 text-center"
-          style={
-            dragging
-              ? {
-                  borderColor: "var(--accent)",
-                  background: "var(--accent-soft)",
-                  borderStyle: "dashed",
-                }
-              : { borderStyle: "dashed", borderWidth: 1.5 }
-          }
+          className="relative flex cursor-pointer flex-col items-center gap-4 overflow-hidden rounded-[1.5rem] px-6 py-12 text-center transition sm:py-16"
+          style={{
+            border: `2px dashed ${dragging ? "var(--accent)" : "color-mix(in srgb, var(--accent) 35%, var(--border-strong))"}`,
+            background: dragging
+              ? "var(--accent-soft)"
+              : "radial-gradient(60% 90% at 50% 0%, var(--accent-softer), var(--surface) 70%)",
+          }}
           role="button"
           tabIndex={0}
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") inputRef.current?.click();
           }}
         >
-          <div
-            className="flex h-14 w-14 items-center justify-center rounded-2xl"
-            style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
-          >
-            <Icon name="upload" size={24} />
-          </div>
+          {file ? (
+            <DocCover title={file.name} size="lg" />
+          ) : (
+            <div
+              className="animate-float flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-[1.4rem] text-white"
+              style={{ background: "var(--brand-grad)", boxShadow: "0 16px 30px -12px rgba(122,80,240,0.75)" }}
+            >
+              <Icon name="cloudUpload" size={32} />
+            </div>
+          )}
           <div>
-            <p className="text-base font-semibold">
+            <p className="text-[1.15rem] font-extrabold tracking-tight sm:text-[1.3rem]">
               {file ? file.name : "Arrastra aquí tu PDF"}
             </p>
-            <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
+            <p className="mt-1.5 text-[0.9rem]" style={{ color: "var(--text-muted)" }}>
               {file
                 ? `${formatBytes(file.size)} · listo para analizar`
-                : `o toca para seleccionarlo · máximo ${capabilities.maxUploadMb} MB`}
+                : `o elígelo de tu dispositivo · hasta ${capabilities.maxUploadMb} MB`}
             </p>
           </div>
+          <span className={file ? "btn btn-secondary" : "btn btn-primary btn-lg"}>
+            <Icon name={file ? "refresh" : "folder"} size={18} />
+            {file ? "Cambiar de PDF" : "Elegir PDF"}
+          </span>
+          {!file ? (
+            <div className="mt-1 flex flex-wrap justify-center gap-2">
+              <span className="chip">
+                <Icon name="scan" size={13} /> Libros escaneados
+              </span>
+              <span className="chip">
+                <Icon name="zap" size={13} /> Lectura rápida
+              </span>
+              <span className="chip">
+                <Icon name="phone" size={13} /> Sigue con la app cerrada
+              </span>
+            </div>
+          ) : null}
           <input
             ref={inputRef}
             type="file"
@@ -287,40 +305,57 @@ export function UploadZone() {
 
         {file ? (
           <>
-            <section className="card space-y-4 p-5">
+            <section className="card space-y-6 p-5 sm:p-6">
               <div>
-                <h2 className="text-sm font-semibold">Nivel de resumen</h2>
-                <p className="mt-0.5 text-xs" style={{ color: "var(--text-muted)" }}>
+                <h2 className="text-[1rem] font-bold">¿Cuánto detalle quieres?</h2>
+                <p className="mt-0.5 text-[0.84rem]" style={{ color: "var(--text-muted)" }}>
                   Cuanto más detallado, más información del PDF se conserva.
                 </p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {DEPTH_OPTIONS.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setDepth(option.value)}
-                      className="rounded-[0.8rem] border px-3 py-2.5 text-left transition"
-                      style={
-                        depth === option.value
-                          ? {
-                              borderColor: "var(--accent)",
-                              background: "var(--accent-soft)",
-                            }
-                          : { borderColor: "var(--border)" }
-                      }
-                    >
-                      <span className="block text-[0.85rem] font-semibold">{option.label}</span>
-                      <span className="block text-[0.74rem]" style={{ color: "var(--text-muted)" }}>
-                        {option.hint}
-                      </span>
-                    </button>
-                  ))}
+                <div className="mt-3.5 grid gap-2.5 sm:grid-cols-2">
+                  {DEPTH_OPTIONS.map((option) => {
+                    const elegido = depth === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setDepth(option.value)}
+                        aria-pressed={elegido}
+                        className="flex items-start gap-3 rounded-2xl border px-4 py-3.5 text-left transition"
+                        style={
+                          elegido
+                            ? {
+                                borderColor: "var(--accent)",
+                                background: "var(--accent-softer)",
+                                boxShadow: "0 0 0 3px var(--accent-ring)",
+                              }
+                            : { borderColor: "var(--border-strong)" }
+                        }
+                      >
+                        <span
+                          className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition"
+                          style={
+                            elegido
+                              ? { borderColor: "var(--accent)", background: "var(--accent)", color: "#fff" }
+                              : { borderColor: "var(--border-strong)" }
+                          }
+                        >
+                          {elegido ? <Icon name="check" size={12} strokeWidth={3.2} /> : null}
+                        </span>
+                        <span>
+                          <span className="block text-[0.92rem] font-bold">{option.label}</span>
+                          <span className="mt-0.5 block text-[0.8rem] leading-snug" style={{ color: "var(--text-muted)" }}>
+                            {option.hint}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1.5 block text-[0.78rem] font-medium">Nivel educativo</span>
+                  <span className="label">Nivel educativo</span>
                   <select
                     className="input"
                     value={level}
@@ -334,7 +369,7 @@ export function UploadZone() {
                   </select>
                 </label>
                 <label className="block">
-                  <span className="mb-1.5 block text-[0.78rem] font-medium">Cómo explicártelo</span>
+                  <span className="label">Cómo explicártelo</span>
                   <select
                     className="input"
                     value={style}
@@ -352,7 +387,7 @@ export function UploadZone() {
               {subjects.length ? (
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block">
-                    <span className="mb-1.5 block text-[0.78rem] font-medium">Asignatura</span>
+                    <span className="label">Asignatura</span>
                     <select
                       className="input"
                       value={subjectId}
@@ -370,7 +405,7 @@ export function UploadZone() {
                     </select>
                   </label>
                   <label className="block">
-                    <span className="mb-1.5 block text-[0.78rem] font-medium">Tema</span>
+                    <span className="label">Tema</span>
                     <select
                       className="input"
                       value={topicId}
@@ -392,18 +427,20 @@ export function UploadZone() {
 
               {!capabilities.aiEnabled ? (
                 <p
-                  className="rounded-[0.7rem] px-3 py-2 text-[0.8rem]"
-                  style={{ background: "var(--warning-soft)", color: "var(--text-soft)" }}
+                  className="flex items-start gap-2.5 rounded-2xl px-4 py-3 text-[0.84rem] leading-relaxed"
+                  style={{ background: "var(--bg-sunken)", color: "var(--text-soft)" }}
                 >
-                  Modo sin IA activo: el resumen se construirá seleccionando frases del
-                  propio PDF. Añade <code>ANTHROPIC_API_KEY</code> al servidor para obtener
-                  explicaciones reescritas y adaptadas a tu nivel.
+                  <Icon name="info" size={17} className="mt-0.5 shrink-0" />
+                  <span>
+                    El resumen se hará con las propias palabras del PDF, ordenadas como unos buenos apuntes.
+                    Con IA activada, además se reescriben y se adaptan a tu nivel.
+                  </span>
                 </p>
               ) : null}
               {file && file.size > capabilities.maxServidorMb * 1024 * 1024 ? (
                 <p
-                  className="rounded-[0.7rem] px-3 py-2 text-[0.8rem]"
-                  style={{ background: "var(--accent-soft)", color: "var(--text-soft)" }}
+                  className="rounded-2xl px-4 py-3 text-[0.84rem] leading-relaxed"
+                  style={{ background: "var(--accent-softer)", color: "var(--text-soft)" }}
                 >
                   Es un PDF muy grande ({formatBytes(file.size)}): no hace falta subirlo. Se
                   guarda en este dispositivo y al servidor solo va el texto, así que
@@ -413,13 +450,14 @@ export function UploadZone() {
               ) : null}
             </section>
 
-            <div className="flex gap-2">
-              <button type="button" className="btn btn-primary flex-1" onClick={start}>
-                <Icon name="sparkles" size={16} />
-                Analizar documento
-              </button>
-              <button type="button" className="btn btn-secondary" onClick={reset}>
+            <div className="flex flex-col-reverse gap-2.5 sm:flex-row">
+              <button type="button" className="btn btn-secondary btn-lg" onClick={reset}>
+                <Icon name="close" size={18} />
                 Quitar
+              </button>
+              <button type="button" className="btn btn-primary btn-lg flex-1" onClick={start}>
+                <Icon name="sparkles" size={19} />
+                Analizar documento
               </button>
             </div>
           </>
@@ -431,17 +469,18 @@ export function UploadZone() {
   // ── Subiendo / procesando / listo ─────────────────────────────────────
   return (
     <div className="space-y-4">
-      <section className="card p-5">
-        <div className="flex items-start gap-3">
-          <div
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
-            style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
-          >
-            <Icon name="file" size={20} />
-          </div>
+      <section className="card p-5 sm:p-6">
+        <div className="flex items-center gap-4">
+          <ProgressRing
+            value={phase === "uploading" ? uploadPercent : phase === "ready" ? 100 : (status?.progress ?? 0)}
+            size={64}
+            stroke={5}
+            tone={phase === "ready" ? "success" : "accent"}
+            label={phase === "ready" ? <Icon name="check" size={22} strokeWidth={2.6} /> : undefined}
+          />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{file?.name}</p>
-            <p className="mt-0.5 text-xs" style={{ color: "var(--text-muted)" }}>
+            <p className="truncate text-[1rem] font-bold">{file?.name}</p>
+            <p className="mt-0.5 text-[0.8rem]" style={{ color: "var(--text-muted)" }}>
               {file ? formatBytes(file.size) : ""}
               {status?.pageCount
                 ? ` · ${status.pageCount} ${status.pageCount === 1 ? "página" : "páginas"}`
@@ -450,43 +489,50 @@ export function UploadZone() {
             </p>
           </div>
           {phase === "uploading" ? (
-            <button type="button" className="btn btn-ghost" onClick={cancel}>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={cancel}>
               Cancelar
             </button>
           ) : null}
           {phase === "ready" || phase === "error" ? (
-            <button type="button" className="btn btn-ghost !px-2" onClick={removeDocument} aria-label="Eliminar documento">
-              <Icon name="trash" size={17} />
+            <button type="button" className="btn btn-ghost btn-icon" onClick={removeDocument} aria-label="Eliminar documento">
+              <Icon name="trash" size={18} />
             </button>
           ) : null}
         </div>
 
-        <div className="mt-4 space-y-1.5">
-          <div className="flex items-center justify-between text-[0.8rem]">
-            <span className="font-medium">
+        <div className="mt-5 space-y-2">
+          <div className="flex items-center justify-between gap-3 text-[0.86rem]">
+            <span className="font-semibold">
               {phase === "uploading"
                 ? "Subiendo PDF…"
                 : (status?.statusMessage ?? "Preparando…")}
             </span>
-            <span style={{ color: "var(--text-muted)" }}>
+            <span className="font-bold tabular-nums" style={{ color: "var(--text-muted)" }}>
               {phase === "uploading" ? `${uploadPercent} %` : `${status?.progress ?? 0} %`}
             </span>
           </div>
           <ProgressBar
             value={phase === "uploading" ? uploadPercent : (status?.progress ?? 0)}
             tone={phase === "ready" ? "success" : "accent"}
-            height={5}
+            height={6}
           />
         </div>
 
-        <ol className="mt-5 space-y-2">
+        <ol className="mt-6 space-y-0">
           {PHASE_STEPS.map((step, index) => {
             const done = currentStepIndex > index || phase === "ready";
             const active = currentStepIndex === index && phase !== "ready";
+            const ultimo = index === PHASE_STEPS.length - 1;
             return (
-              <li key={step.label} className="flex items-center gap-2.5 text-[0.82rem]">
+              <li key={step.label} className="relative flex items-start gap-3 pb-4 text-[0.9rem] last:pb-0">
+                {!ultimo ? (
+                  <span
+                    className="absolute left-[0.8rem] top-7 h-[calc(100%-1.75rem)] w-0.5 -translate-x-1/2 rounded-full"
+                    style={{ background: done ? "var(--success)" : "var(--border)" }}
+                  />
+                ) : null}
                 <span
-                  className={`flex h-5 w-5 items-center justify-center rounded-full text-[0.62rem] font-bold ${
+                  className={`relative flex h-[1.6rem] w-[1.6rem] shrink-0 items-center justify-center rounded-full text-[0.7rem] font-bold ${
                     active ? "animate-pulse-soft" : ""
                   }`}
                   style={{
@@ -498,9 +544,12 @@ export function UploadZone() {
                     color: done || active ? "#fff" : "var(--text-muted)",
                   }}
                 >
-                  {done ? <Icon name="check" size={12} strokeWidth={3} /> : index + 1}
+                  {done ? <Icon name="check" size={14} strokeWidth={3} /> : index + 1}
                 </span>
-                <span style={{ color: done || active ? "var(--text)" : "var(--text-muted)" }}>
+                <span
+                  className="pt-0.5"
+                  style={{ color: done || active ? "var(--text)" : "var(--text-muted)", fontWeight: active ? 700 : 500 }}
+                >
                   {step.label}
                 </span>
               </li>
@@ -511,8 +560,8 @@ export function UploadZone() {
 
       {phase === "uploading" ? (
         <p
-          className="card p-3 text-[0.82rem]"
-          style={{ background: "var(--accent-soft)", borderColor: "transparent" }}
+          className="rounded-2xl px-4 py-3 text-[0.86rem] leading-relaxed"
+          style={{ background: "var(--accent-softer)", color: "var(--text-soft)" }}
         >
           No cierres la app hasta que termine de subir: a la vez ya se está leyendo.
         </p>
@@ -520,8 +569,8 @@ export function UploadZone() {
 
       {phase === "processing" ? (
         <p
-          className="card p-3 text-[0.82rem]"
-          style={{ background: "var(--accent-soft)", borderColor: "transparent" }}
+          className="rounded-2xl px-4 py-3 text-[0.86rem] leading-relaxed"
+          style={{ background: "var(--accent-softer)", color: "var(--text-soft)" }}
         >
           {status && status.pageCount > 80
             ? `Es un documento largo (${status.pageCount} páginas): puede tardar unos minutos. `
@@ -543,8 +592,8 @@ export function UploadZone() {
 
       {status && status.textCoverage > 0 && status.textCoverage < 60 && phase !== "error" ? (
         <div
-          className="card p-4 text-[0.83rem]"
-          style={{ background: "var(--warning-soft)", borderColor: "transparent" }}
+          className="rounded-2xl px-4 py-3 text-[0.86rem] leading-relaxed"
+          style={{ background: "var(--warning-soft)", color: "var(--text-soft)" }}
         >
           Solo hemos podido leer texto en el {status.textCoverage} % de las páginas. Si el
           PDF está escaneado, el resultado puede quedar incompleto.
@@ -552,35 +601,40 @@ export function UploadZone() {
       ) : null}
 
       {phase === "ready" && documentId ? (
-        <div className="card animate-in p-5 text-center">
-          <p className="text-lg font-semibold">🎉 Tu material de estudio está listo</p>
-          <p className="mt-1 text-sm" style={{ color: "var(--text-muted)" }}>
-            ¿Por dónde quieres empezar?
-          </p>
-          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <div className="card-brand animate-in p-6 text-center sm:p-8">
+          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white/20">
+            <Icon name="checkCircle" size={30} />
+          </span>
+          <p className="mt-4 text-[1.35rem] font-extrabold tracking-tight">Tu material de estudio está listo</p>
+          <p className="mt-1 text-[0.92rem] text-white/85">¿Por dónde quieres empezar?</p>
+          <div className="mt-5 grid gap-2.5 sm:grid-cols-3">
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn btn-white btn-lg"
               onClick={() => router.push(`/documento/${documentId}?tab=summary`)}
             >
-              📚 Estudiar resumen
+              <Icon name="book" size={19} />
+              Resumen
             </button>
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-lg !border-white/30 !bg-white/12 !text-white hover:!bg-white/20"
               onClick={() => router.push(`/documento/${documentId}?tab=outline`)}
             >
-              🧠 Ver esquema
+              <Icon name="outline" size={19} />
+              Esquema
             </button>
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-lg !border-white/30 !bg-white/12 !text-white hover:!bg-white/20"
               onClick={() => router.push(`/documento/${documentId}?tab=audio`)}
             >
-              🎧 Escuchar
+              <Icon name="headphones" size={19} />
+              Escuchar
             </button>
           </div>
-          <button type="button" className="btn btn-ghost mt-3" onClick={reset}>
+          <button type="button" className="btn btn-ghost mt-3 !text-white/85 hover:!bg-white/10" onClick={reset}>
+            <Icon name="plus" size={17} />
             Subir otro PDF
           </button>
         </div>

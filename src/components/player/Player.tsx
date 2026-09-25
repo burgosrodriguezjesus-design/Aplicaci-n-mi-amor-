@@ -59,21 +59,21 @@ export function MiniPlayer() {
 
   return (
     <div
-      className="animate-in fixed inset-x-0 bottom-[calc(3.9rem+env(safe-area-inset-bottom,0px))] z-40 px-2 md:bottom-3 md:left-auto md:right-4 md:w-[26rem] md:px-0"
+      className="animate-in fixed inset-x-0 bottom-[calc(4.8rem+env(safe-area-inset-bottom,0px))] z-40 px-2 md:bottom-3 md:left-auto md:right-4 md:w-[26rem] md:px-0"
       role="region"
       aria-label="Reproductor"
     >
       <div
-        className="card cursor-pointer overflow-hidden"
-        style={{ boxShadow: "var(--shadow-lg)" }}
+        className="card cursor-pointer overflow-hidden !rounded-2xl"
+        style={{ boxShadow: "var(--shadow-lg)", background: "var(--glass)", backdropFilter: "saturate(180%) blur(18px)" }}
         onClick={() => player.setExpanded(true)}
       >
-        <div className="flex items-center gap-2 px-3 py-2">
+        <div className="flex items-center gap-2.5 px-3 py-2.5">
           <div
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-            style={{ background: "var(--audio-soft)", color: "var(--audio)" }}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white"
+            style={{ background: "linear-gradient(135deg, #f59e0b, #f0719b)" }}
           >
-            <Icon name="headphones" size={17} />
+            <Icon name="headphones" size={18} />
           </div>
 
           <div className="min-w-0 flex-1">

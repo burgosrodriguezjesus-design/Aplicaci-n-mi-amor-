@@ -197,7 +197,7 @@ export function parseMarkdown(markdown: string): Block[] {
 }
 
 const CALLOUT_META: Record<string, { label: string; icon: string; className: string }> = {
-  examen: { label: "Importante para el examen", icon: "flame", className: "callout-examen" },
+  examen: { label: "Importante para el examen", icon: "target", className: "callout-examen" },
   aclaracion: {
     label: "Aclaración añadida (no está en el PDF)",
     icon: "sparkles",
@@ -208,12 +208,12 @@ const CALLOUT_META: Record<string, { label: string; icon: string; className: str
     icon: "warning",
     className: "callout-duda",
   },
-  cita: { label: "", icon: "file", className: "callout-cita" },
-  recuerda: { label: "Recuerda", icon: "flame", className: "callout-recuerda" },
-  formula: { label: "Fórmula", icon: "file", className: "callout-formula" },
-  ejemplo: { label: "Ejemplo (no es teoría)", icon: "book", className: "callout-ejemplo" },
-  curiosidad: { label: "Curiosidad (no es teoría)", icon: "sparkles", className: "callout-ejemplo" },
-  practica: { label: "Para practicar", icon: "brain", className: "callout-practica" },
+  cita: { label: "", icon: "quote", className: "callout-cita" },
+  recuerda: { label: "Recuerda", icon: "lightbulb", className: "callout-recuerda" },
+  formula: { label: "Fórmula", icon: "sigma", className: "callout-formula" },
+  ejemplo: { label: "Ejemplo · no es teoría", icon: "quote", className: "callout-ejemplo" },
+  curiosidad: { label: "Curiosidad · no es teoría", icon: "sparkles", className: "callout-ejemplo" },
+  practica: { label: "Para practicar", icon: "pencil", className: "callout-practica" },
 };
 
 function InlineRun({
@@ -299,16 +299,14 @@ export function Markdown({
             const meta = CALLOUT_META[block.kind] ?? CALLOUT_META.cita;
             return (
               <div key={index} className={`callout ${meta.className}`}>
-                <span className="mt-0.5 shrink-0">
-                  <Icon name={meta.icon} size={16} />
+                <span className="callout-icon mt-0.5 shrink-0">
+                  <Icon name={meta.icon} size={17} />
                 </span>
-                <span>
-                  {meta.label ? (
-                    <strong className="mr-1.5 text-[0.78rem] uppercase tracking-wide">
-                      {meta.label}:
-                    </strong>
-                  ) : null}
-                  <InlineRun content={block.content} onPageClick={onPageClick} />
+                <span className="min-w-0">
+                  {meta.label ? <span className="callout-label">{meta.label}</span> : null}
+                  <span className="callout-body">
+                    <InlineRun content={block.content} onPageClick={onPageClick} />
+                  </span>
                 </span>
               </div>
             );
