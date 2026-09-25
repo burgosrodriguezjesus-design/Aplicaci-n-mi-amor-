@@ -72,6 +72,19 @@ comprobar("la fórmula del punto de pedido", /punto de pedido = stock de segurid
 comprobar("si anuncia «dos métodos», explica los dos", /PMP/.test(resumen) && /FIFO/.test(resumen));
 comprobar("los métodos como conceptos del esquema", ["Método del precio medio ponderado (PMP):", "Método FIFO:"].every((t) => lineasEsquema.some((l) => l.includes(t))));
 comprobar("cómo se calcula la cuota en el esquema", lineasEsquema.some((l) => /Cuota a ingresar: se obtiene/.test(l)));
+
+// Lo que no es temario: separado o fuera.
+const teoria = resumen.split("\n").filter((l) => !/^>\s*\[!(ejemplo|curiosidad|practica)\]/.test(l)).join("\n");
+const sinEjercicios = ["Explica la diferencia", "Calcula el IVA de una factura", "presentan las pymes", "Clasifica las siguientes", "punto de pedido si el stock", "modelo 347"];
+comprobar("los ejercicios no se resumen como teoría", sinEjercicios.every((t) => !todo.includes(t)), sinEjercicios.filter((t) => todo.includes(t)).join(", "));
+comprobar("las actividades se señalan aparte", (resumen.match(/\[!practica\][^\n]*actividad/g) ?? []).length >= 2, (resumen.match(/.*\[!practica\].*/g) ?? []).join(" | "));
+comprobar("el ejemplo va en su recuadro", /\[!ejemplo\][^\n]*Muebles Ortega/.test(resumen));
+comprobar("ni el ejemplo ni sus nombres en la teoría", !/Ortega|Lucía|lámpara|605 €/.test(teoria), (teoria.match(/.*(?:Ortega|Lucía|lámpara|605 €).*/) ?? [""])[0]);
+comprobar("el cálculo del ejemplo no es una fórmula ni una definición", !/\[!formula\][^\n]*500|\*\*IVA repercutido:\*\*\s*500|Fórmulas[\s\S]*500 ×/.test(resumen));
+comprobar("la curiosidad no se mezcla con la teoría", !/Francia|1954/.test(teoria));
+comprobar("sin testimonios, créditos ni editorial", !/Laura Gómez|Distribuciones Norte|Shutterstock|Javier Martínez|ISBN|Ediciones Didácticas|Ana Pérez|Luis Romero/.test(todo), (todo.match(/.*(?:Laura Gómez|Distribuciones Norte|Shutterstock|Javier Martínez|ISBN|Ediciones Didácticas|Ana Pérez|Luis Romero).*/) ?? [""])[0]);
+comprobar("el esquema es solo temario", !lineasEsquema.some((l) => /Ortega|Lucía|Actividades|ACTIVIDADES|Explica|Calcula el|Clasifica las|Sabías|Francia|Ejemplo/i.test(l)), lineasEsquema.filter((l) => /Ortega|Lucía|Actividades|ACTIVIDADES|Explica|Calcula el|Clasifica las|Sabías|Francia|Ejemplo/i.test(l)).join(" | "));
+comprobar("las actividades no son unidades ni apartados", !/^#{2,4}\s+(?:actividades|ejemplo)/im.test(resumen));
 comprobar("resalta el término definido", /\*\*impuesto sobre el valor añadido \(IVA\)\*\*/i.test(resumen));
 comprobar("los recuadros «Recuerda» destacados", (resumen.match(/\[!recuerda\]/g) ?? []).length >= 2);
 comprobar("glosario en la visión general", /Conceptos imprescindibles[\s\S]*\*\*Existencias:\*\*/i.test(resumen), resumen.slice(0, 600));

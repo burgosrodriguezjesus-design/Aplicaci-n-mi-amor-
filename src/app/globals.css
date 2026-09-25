@@ -487,6 +487,19 @@ body {
   border-color: color-mix(in srgb, var(--success) 25%, transparent);
   color: var(--text);
 }
+.callout-ejemplo {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--border-strong);
+  color: var(--text-soft);
+  font-size: 0.9em;
+}
+.callout-practica {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text);
+  font-size: 0.9em;
+}
 .callout-formula {
   background: var(--bg-sunken);
   border-color: var(--border-strong);

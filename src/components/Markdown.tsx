@@ -211,6 +211,9 @@ const CALLOUT_META: Record<string, { label: string; icon: string; className: str
   cita: { label: "", icon: "file", className: "callout-cita" },
   recuerda: { label: "Recuerda", icon: "flame", className: "callout-recuerda" },
   formula: { label: "Fórmula", icon: "file", className: "callout-formula" },
+  ejemplo: { label: "Ejemplo (no es teoría)", icon: "book", className: "callout-ejemplo" },
+  curiosidad: { label: "Curiosidad (no es teoría)", icon: "sparkles", className: "callout-ejemplo" },
+  practica: { label: "Para practicar", icon: "brain", className: "callout-practica" },
 };
 
 function InlineRun({

@@ -10,6 +10,7 @@
 import "server-only";
 import type { PageLine } from "./extract";
 import { normalize, type StructureContext } from "./toc";
+import { empiezaCuriosidad, empiezaEjemplo, esCredito, esEnunciadoNumerado, esTituloDePractica } from "./clasificar";
 
 export type PageText = { pageNumber: number; text: string; lines?: PageLine[] };
 
@@ -124,6 +125,8 @@ function isNoise(line: string) {
   if (/^p[aá]g(ina)?\.?\s*\d+/i.test(trimmed)) return true;
   if (/^[-–—_=·•.\s]+$/.test(trimmed)) return true;
   if (PIE_DE_FIGURA.test(trimmed)) return true;
+  // Créditos de fotos, datos de la editorial, enlaces.
+  if (esCredito(trimmed)) return true;
   if (esEtiquetaDeGrafico(trimmed)) return true;
   if (!pareceTexto(trimmed)) return true;
   return false;
@@ -241,8 +244,14 @@ export function tagLines(pages: PageText[], context?: StructureContext): TaggedL
       const big = bodyHeight !== null && height >= bodyHeight * 1.14;
       const veryBig = bodyHeight !== null && height >= bodyHeight * 1.42;
       const fromToc = confirmed.get(normalize(line));
+      // "Actividades", "Ejemplo 4.1", "3. Calcula…" nunca son un apartado del
+      // temario, aunque vayan en grande o aparezcan en el índice.
+      const noEsTemario =
+        esTituloDePractica(line) || empiezaEjemplo(line) || empiezaCuriosidad(line) || esEnunciadoNumerado(line);
 
-      if (fromToc !== undefined && short) {
+      if (noEsTemario) {
+        heading = null;
+      } else if (fromToc !== undefined && short) {
         heading = fromToc;
         source = "indice";
       } else if (CHAPTER_RE.test(line) && short && !endsLikeSentence) {

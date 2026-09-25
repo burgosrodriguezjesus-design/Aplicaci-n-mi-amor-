@@ -7,6 +7,10 @@ resumen y el esquema en las condiciones reales de un escaneo:
   sombreado de "Recuerda", una tabla con bordes, un gráfico con su pie y una
   "foto" (ruido) que el lector no debe convertir en palabras;
 - cabecera y pie repetidos en cada página (el título del libro y el número);
+- lo que NO es temario y el resumen debe separar: un ejemplo con una empresa
+  inventada y su cálculo, un "Por ejemplo, Lucía…", un "¿Sabías que…?", un
+  testimonio, el crédito de una foto, actividades numeradas con un test,
+  "ACTIVIDADES FINALES" y los datos de autores, editorial e ISBN;
 - defectos del escáner: hoja un poco torcida, desenfoque, grano, fondo gris,
   sombra del lomo y compresión JPEG.
 
@@ -34,7 +38,8 @@ PEQUENA = ImageFont.truetype(f"{FUENTES}/LiberationSans-Regular.ttf", 26)
 LIBRO = "Proceso integral de la actividad comercial"
 
 # (tipo, texto). Tipos: unidad, apartado, sub, p (párrafo), vineta, recuerda,
-# tabla, grafico, foto, salto.
+# tabla, grafico, foto, salto, ejemplo (título, texto), cuadro (recuadro
+# gris sin título), actividades (título), pequena (letra pequeña).
 CONTENIDO = [
     ("indice", None),
     ("salto", None),
@@ -43,13 +48,15 @@ CONTENIDO = [
     ("p", "El impuesto sobre el valor añadido (IVA) es un tributo indirecto que grava el consumo de bienes y servicios. Se denomina indirecto porque no tiene en cuenta la capacidad económica de quien lo paga, sino el acto de consumo."),
     ("p", "La empresa actúa como recaudadora: cobra el IVA a sus clientes, paga el IVA a sus proveedores e ingresa en Hacienda la diferencia. Por eso se dice que el IVA es neutral para el empresario, ya que el coste lo soporta el consumidor final."),
     ("recuerda", "Recuerda: el IVA repercutido es el que la empresa cobra en sus ventas y el IVA soportado es el que paga en sus compras."),
+    ("ejemplo", ("Ejemplo 4.1", "La empresa Muebles Ortega, S.L. vende una mesa por 500 € más IVA. El IVA repercutido es 500 × 21 % = 105 €, por lo que el cliente paga 605 € en total.")),
     ("apartado", "2. Tipos impositivos"),
     ("p", "La Ley del IVA establece tres tipos impositivos que se aplican sobre la base imponible según la naturaleza del bien o del servicio:"),
     ("vineta", "Tipo general del 21 %, que se aplica a la mayoría de los bienes y servicios."),
     ("vineta", "Tipo reducido del 10 %, para la hostelería, el transporte de viajeros y algunos alimentos."),
     ("vineta", "Tipo superreducido del 4 %, para el pan, la leche, los libros y los medicamentos."),
     ("tabla", [("Tipo", "Porcentaje", "Ejemplos"), ("General", "21 %", "Ropa, electrónica"), ("Reducido", "10 %", "Hostelería"), ("Superreducido", "4 %", "Pan, libros")]),
-    ("p", "La base imponible está formada por el importe total de la contraprestación, incluidos los gastos de transporte y los envases, y excluidos los descuentos que figuren en la factura."),
+    ("p", "La base imponible está formada por el importe total de la contraprestación, incluidos los gastos de transporte y los envases, y excluidos los descuentos que figuren en la factura. Por ejemplo, si Lucía compra una lámpara de 80 € y paga 10 € de transporte, la base imponible es de 90 €."),
+    ("cuadro", "¿Sabías que el IVA se aplicó por primera vez en Francia en 1954 y llegó a España en 1986?"),
     ("salto", None),
     ("apartado", "3. Liquidación del impuesto"),
     ("sub", "3.1. Cálculo de la cuota"),
@@ -58,11 +65,18 @@ CONTENIDO = [
     ("sub", "3.2. Plazos de presentación"),
     ("p", "Las pequeñas y medianas empresas presentan el modelo 303 cada trimestre, durante los veinte primeros días naturales de abril, julio y octubre, y durante los treinta primeros días de enero. Además, presentan el resumen anual en el modelo 390."),
     ("recuerda", "Recuerda: un retraso en la presentación del modelo 303 conlleva recargos e intereses de demora."),
+    ("actividades", "Actividades"),
+    ("p", "1. Explica la diferencia entre el IVA repercutido y el IVA soportado."),
+    ("p", "2. Calcula el IVA de una factura de 1.200 € al tipo general."),
+    ("p", "3. ¿Qué modelo presentan las pymes cada trimestre?"),
+    ("p", "a) El modelo 390.   b) El modelo 303.   c) El modelo 347."),
     ("salto", None),
     ("unidad", "Unidad 5. Gestión de existencias"),
     ("apartado", "1. Las existencias en la empresa"),
     ("p", "Las existencias son los bienes que la empresa tiene almacenados para venderlos o para incorporarlos al proceso productivo. Una buena gestión de existencias evita tanto la rotura de stock como el exceso de inventario, que inmoviliza recursos financieros."),
     ("foto", "Fotografía 5.1. Almacén de una empresa distribuidora."),
+    ("pequena", "Foto: Javier Martínez / Shutterstock"),
+    ("cuadro", "«En nuestro almacén hacemos inventario cada trimestre para evitar sorpresas», Laura Gómez, jefa de almacén de Distribuciones Norte."),
     ("apartado", "2. Clasificación de las existencias"),
     ("p", "Según su función en la empresa, las existencias se clasifican en:"),
     ("vineta", "Mercaderías: bienes adquiridos para venderlos sin transformarlos."),
@@ -76,6 +90,10 @@ CONTENIDO = [
     ("recuerda", "Recuerda: punto de pedido = stock de seguridad + consumo medio diario × plazo de entrega."),
     ("apartado", "4. El inventario"),
     ("p", "El inventario es la relación detallada y valorada de las existencias que hay en el almacén en una fecha determinada. Es obligatorio realizarlo al cierre de cada ejercicio económico y permite comprobar que el stock real coincide con el registrado en las fichas de almacén."),
+    ("actividades", "ACTIVIDADES FINALES"),
+    ("p", "1. Clasifica las siguientes existencias de una panadería: harina, pan y bolsas de papel."),
+    ("p", "2. Calcula el punto de pedido si el stock de seguridad es de 50 unidades, el consumo diario es de 20 unidades y el plazo de entrega es de 5 días."),
+    ("pequena", "Autores: Ana Pérez y Luis Romero. © Ediciones Didácticas, 2024. ISBN 978-84-1234-567-8."),
 ]
 
 INDICE = [
@@ -189,6 +207,34 @@ def componer():
             for i, linea in enumerate(lineas):
                 d.text((MARGEN + 30, pag.y + 20 + i * 48), linea, fill=(20, 20, 25), font=NEGRITA)
             pag.y += alto + 35
+        elif tipo in ("ejemplo", "cuadro"):
+            titulo, texto = valor if tipo == "ejemplo" else (None, valor)
+            lineas = envolver(texto, CUERPO, util - 60)
+            alto = len(lineas) * 48 + 40 + (60 if titulo else 0)
+            if not pag.cabe(alto):
+                paginas.append(Pagina(len(paginas) + 1))
+                pag, d = paginas[-1], paginas[-1].d
+            d.rectangle((MARGEN, pag.y, ANCHO - MARGEN, pag.y + alto), fill=(238, 240, 246), outline=(120, 130, 160), width=2)
+            y = pag.y + 20
+            if titulo:
+                d.text((MARGEN + 30, y), titulo, fill=(20, 30, 70), font=APARTADO)
+                y += 60
+            for i, linea in enumerate(lineas):
+                d.text((MARGEN + 30, y + i * 48), linea, fill=(25, 25, 30), font=CUERPO)
+            pag.y += alto + 35
+        elif tipo == "actividades":
+            if not pag.cabe(200):
+                paginas.append(Pagina(len(paginas) + 1))
+                pag, d = paginas[-1], paginas[-1].d
+            pag.y += 30
+            d.text((MARGEN, pag.y), valor, fill=(150, 40, 40), font=APARTADO)
+            pag.y += 80
+        elif tipo == "pequena":
+            if not pag.cabe(60):
+                paginas.append(Pagina(len(paginas) + 1))
+                pag, d = paginas[-1], paginas[-1].d
+            d.text((MARGEN, pag.y), valor, fill=(70, 70, 75), font=PEQUENA)
+            pag.y += 60
         elif tipo == "tabla":
             filas = valor
             cols = [0, 330, 620, util]

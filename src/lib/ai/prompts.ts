@@ -23,12 +23,12 @@ export const DEPTH_LABELS: Record<SummaryDepth, string> = {
 const DEPTH_RULES: Record<SummaryDepth, string> = {
   RAPIDO:
     "Extension objetivo: entre el 20 % y el 30 % de la longitud del texto original. " +
-    "Conserva TODAS las definiciones, formulas, cifras y nombres propios, pero reduce " +
-    "al maximo las explicaciones de apoyo y los ejemplos.",
+    "Conserva TODAS las definiciones, formulas y cifras del temario, pero reduce " +
+    "al maximo las explicaciones de apoyo y deja fuera los ejemplos.",
   NORMAL:
     "Extension objetivo: entre el 35 % y el 50 % de la longitud del texto original. " +
-    "Conserva todas las definiciones, formulas, cifras, fechas y nombres propios, y " +
-    "manten una explicacion breve de cada concepto.",
+    "Conserva todas las definiciones, formulas, cifras y fechas del temario, y " +
+    "manten una explicacion breve de cada concepto. Como mucho, un ejemplo corto por apartado.",
   DETALLADO:
     "Extension objetivo: entre el 55 % y el 70 % de la longitud del texto original. " +
     "Conserva todos los conceptos, definiciones, formulas, datos, clasificaciones y " +
@@ -69,12 +69,21 @@ export const FIDELITY_RULES = `REGLAS DE FIDELIDAD (obligatorias, sin excepcion)
    > [!aclaracion] Texto de la aclaracion anadida.
    Todo lo que no vaya dentro de ese bloque se entiende que procede del documento.
 6. Conserva la terminologia exacta del original: si el documento dice "interruptor diferencial", no lo cambies por "diferencial".
-7. Conserva integramente formulas, unidades, simbolos, cifras, fechas y nombres propios.
+7. Conserva integramente formulas, unidades, simbolos, cifras, fechas y los nombres propios que forman parte del temario (leyes, autores de una teoria, organismos).
 8. Responde SIEMPRE en espanol.
 9. ESTRUCTURA: el titulo del fragmento indica a que tema pertenece ("TEMA 2 - ... · 2.3 ..."). Respeta ese sitio: no renombres el apartado, no lo fundas con otro y no inventes subapartados que el texto no tenga. Si el texto trae subapartados propios, mantenlos como encabezados \`####\` con su numeracion original.
 10. LISTAS Y CLASIFICACIONES: cuando el original enumera o clasifica ("se dividen en", "tipos de", "consta de"), la respuesta debe llevar esa enumeracion como lista, con todos sus elementos. Convertir una lista en prosa pierde justo lo que se estudia.
 11. TABLAS: si el texto trae una tabla, reprodúcela como tabla Markdown con todas sus filas. No la resumas en una frase.
-12. DATOS EXAMINABLES: porcentajes, plazos, importes, medidas, tolerancias y excepciones se copian tal cual, nunca se redondean ni se generalizan.`;
+12. DATOS EXAMINABLES: porcentajes, plazos, importes, medidas, tolerancias y excepciones se copian tal cual, nunca se redondean ni se generalizan.
+13. DISTINGUE QUE ES TEMARIO Y QUE NO. Un libro mezcla la teoria con otras cosas; tratalas asi:
+   - TEORIA (definiciones, clasificaciones, procedimientos, normas, formulas): es lo que se resume.
+   - EJEMPLOS ("Ejemplo 4.1", "Por ejemplo", "Supongamos que…", casos con empresas o personas inventadas como "Muebles Ortega, S.L." o "Lucia compra…", calculos con cifras concretas): NUNCA los mezcles con la teoria ni saques de ellos definiciones o formulas. Si ayudan a entender, resumelos en una o dos frases dentro de un bloque:
+     > [!ejemplo] Texto breve del ejemplo.
+   - ACTIVIDADES Y EJERCICIOS ("Actividades", "Ejercicios", "Autoevaluacion", "Test", "Caso practico", preguntas numeradas, enunciados que empiezan por "Calcula", "Explica", "Indica"…, opciones a/b/c): NO son contenido y no se resumen. Como mucho, indica que existen con:
+     > [!practica] Actividades para practicar este apartado (pag. N).
+   - PIES DE FOTO, DE FIGURA Y DE GRAFICO, creditos de imagenes, etiquetas de ejes, cabeceras y pies de pagina: se ignoran.
+   - NOMBRES QUE NO SON TEMARIO (autores y editorial del libro, fotografos, personas de testimonios o entrevistas, nombres de empresas o personas de los ejemplos, ISBN, derechos de autor): no aparecen en el resumen ni en el esquema.
+   - Si el texto de un escaneo trae palabras sin sentido o letras sueltas, ignoralas: no las copies ni intentes adivinarlas.`;
 
 /** Repaso obligatorio antes de dar una respuesta por buena. */
 export const REVIEW_CHECKLIST = `ANTES DE RESPONDER, REVISA TU PROPIO TEXTO:
@@ -253,6 +262,7 @@ Reglas del esquema:
 - Respeta la numeracion y el orden del documento original.
 - Las etiquetas deben ser cortas (menos de 90 caracteres) y utiles para repasar.
 - No inventes apartados que no aparezcan en la informacion proporcionada.
+- El esquema es SOLO del temario: sin ejemplos, sin actividades ni ejercicios, sin pies de foto y sin nombres de personas o empresas de los ejemplos.
 - No escribas nada fuera del JSON.`;
 }
 

@@ -13,7 +13,11 @@
  *  - las clasificaciones como listas, con el nombre de cada tipo en negrita;
  *  - los recuadros del libro ("Recuerda", "Importante") y las fórmulas,
  *    destacados;
- *  - fuera pies de figura, restos de gráficos y líneas de basura.
+ *  - fuera pies de figura, restos de gráficos y líneas de basura;
+ *  - lo que no es temario, separado de la teoría: los ejemplos (empresas y
+ *    personas inventadas, cálculos con cifras) van aparte en un recuadro
+ *    «Ejemplo», las actividades y tests se quedan en un aviso «Para
+ *    practicar», y los créditos, testimonios y datos de la editorial fuera.
  *
  * Visión general: qué trata cada unidad y un glosario con las definiciones.
  *
@@ -23,6 +27,19 @@
  */
 import "server-only";
 import type { Chunk } from "../pdf/structure";
+import {
+  empiezaCuriosidad,
+  empiezaEjemplo,
+  esCalculoConCifras,
+  esCredito,
+  esEnunciado,
+  esEnunciadoNumerado,
+  esFraseDeEjemplo,
+  esTestimonio,
+  esTituloDePractica,
+  sinMarcaDeCuriosidad,
+  sinMarcaDeEjemplo,
+} from "../pdf/clasificar";
 import type { SummaryDepth } from "./prompts";
 import type { ChunkAnalysis, OutlineNode, OutlineTree } from "./types";
 
@@ -58,7 +75,7 @@ const VINETA_RE =
   /^\s*(?:[-–—•·▪◦●○■□➢►✓*+]\s+|\(?[a-z]\)\s+|\(?\d{1,2}\)\s+|\d{1,2}[.)]\s+(?=[a-záéíóúñ]))/;
 /** Recuadros del libro: "Recuerda: …", "Importante: …". */
 const AVISO_RE =
-  /^(recuerda|importante|atenci[oó]n|ojo|nota|no olvides|a tener en cuenta|consejo|sab[ií]as que)\s*:\s*/i;
+  /^(recuerda|importante|atenci[oó]n|ojo|nota|no olvides|a tener en cuenta|consejo)\s*:\s*/i;
 const PIE_RE =
   /^(figura|fig\.|fotograf[ií]a|foto|imagen|ilustraci[oó]n|gr[aá]fico|esquema|mapa|tabla|cuadro|fuente)\s*\d+([.\-]\d+)*\.?\s/i;
 /** Conectores que no aportan contenido al principio de una frase. */
@@ -160,6 +177,29 @@ function limpiarTitulo(titulo: string) {
     .trim();
 }
 
+/**
+ * Cuántos ejemplos entran según el detalle pedido: en un resumen rápido
+ * ninguno; en uno detallado, todos, pero siempre aparte de la teoría.
+ */
+const EJEMPLOS: Record<SummaryDepth, { bloques: number; largo: number; sueltos: boolean; curiosidades: boolean }> = {
+  RAPIDO: { bloques: 0, largo: 0, sueltos: false, curiosidades: false },
+  NORMAL: { bloques: 2, largo: 220, sueltos: false, curiosidades: false },
+  DETALLADO: { bloques: 6, largo: 320, sueltos: true, curiosidades: true },
+  MUY_DETALLADO: { bloques: 20, largo: 520, sueltos: true, curiosidades: true },
+};
+
+/** Las primeras frases enteras que caben en `maximo` caracteres. */
+function recortarFrases(texto: string, maximo: number) {
+  if (maximo <= 0) return "";
+  const frases = partirFrases(texto.replace(/\s+/g, " ").trim());
+  let salida = "";
+  for (const frase of frases) {
+    if ((salida + " " + frase).trim().length > maximo) break;
+    salida = `${salida} ${frase}`.trim();
+  }
+  return salida || acortar(frases[0] ?? texto, maximo);
+}
+
 /* ── Lectura del fragmento en bloques ──────────────────────────────── */
 
 type Bloque =
@@ -167,7 +207,32 @@ type Bloque =
   | { tipo: "parrafo"; texto: string; pagina: number }
   | { tipo: "lista"; intro: string | null; items: string[]; pagina: number }
   | { tipo: "aviso"; texto: string; pagina: number }
-  | { tipo: "formula"; texto: string; pagina: number };
+  | { tipo: "formula"; texto: string; pagina: number }
+  /** Lo que no es teoría: un ejemplo o un recuadro de curiosidad. */
+  | { tipo: "ejemplo" | "curiosidad"; texto: string; pagina: number }
+  /** Actividades, ejercicios o un test: no se resumen, se señalan. */
+  | { tipo: "practica"; enunciados: number; pagina: number }
+  /** Marca suelta ("Actividades", "Ejemplo 4.1") para lo que viene después. */
+  | { tipo: "marca"; clase: "practica" | "ejemplo" | "curiosidad"; pagina: number };
+
+/** Un párrafo de teoría dentro de una zona de actividades: se acabó la práctica. */
+function pareceTeoria(texto: string) {
+  const frases = partirFrases(texto);
+  return (
+    texto.split(/\s+/).length >= 35 &&
+    DEFINITION_RE.test(texto) &&
+    !esEnunciado(texto) &&
+    !/\?/.test(texto) &&
+    frases.filter(esFraseDeEjemplo).length < frases.length / 2
+  );
+}
+
+/** Cuántos enunciados numerados trae un párrafo de actividades. */
+function contarEnunciados(texto: string) {
+  const numerados = texto.match(/(?:^|\s)\d{1,2}[.)]\s+(?=[¿¡\p{Lu}])/gu)?.length ?? 0;
+  if (numerados) return numerados;
+  return esEnunciado(texto) || /\?\s*$/.test(texto) ? 1 : 0;
+}
 
 function leerBloques(contenido: string, paginaInicial: number): Bloque[] {
   const bloques: Bloque[] = [];
@@ -217,6 +282,30 @@ function leerBloques(contenido: string, paginaInicial: number): Bloque[] {
       continue;
     }
 
+    // Créditos de fotos, editorial, enlaces: fuera.
+    if (esCredito(linea)) continue;
+
+    // "Actividades", "Ejemplo 4.1", "¿Sabías que…?": marcan lo que viene.
+    if (esTituloDePractica(linea)) {
+      cerrarParrafo();
+      cerrarLista();
+      bloques.push({ tipo: "marca", clase: "practica", pagina });
+      continue;
+    }
+    const esEjemplo = empiezaEjemplo(linea);
+    if (esEjemplo || empiezaCuriosidad(linea)) {
+      cerrarParrafo();
+      cerrarLista();
+      const resto = esEjemplo ? sinMarcaDeEjemplo(linea) : sinMarcaDeCuriosidad(linea);
+      if (resto.split(/\s+/).filter(Boolean).length < 3) {
+        bloques.push({ tipo: "marca", clase: esEjemplo ? "ejemplo" : "curiosidad", pagina });
+        continue;
+      }
+    }
+    // Cada enunciado de ejercicio y cada cita («…»), su propio párrafo: el
+    // escaneo los pega a la teoría de al lado.
+    if (esEnunciadoNumerado(linea) || /^[«"“]/.test(linea)) cerrarParrafo();
+
     if (VINETA_RE.test(linea)) {
       cerrarParrafo();
       if (!lista) lista = { items: [], pagina };
@@ -254,17 +343,81 @@ function leerBloques(contenido: string, paginaInicial: number): Bloque[] {
     }
   }
 
-  // Segunda pasada: avisos, fórmulas, pies de figura, basura, y la frase
-  // que introduce una lista ("se clasifican en:") unida a su lista.
+  // Segunda pasada: qué es temario y qué no (actividades, ejemplos,
+  // curiosidades, testimonios), avisos, fórmulas, pies de figura, basura, y
+  // la frase que introduce una lista ("se clasifican en:") unida a su lista.
   const salida: Bloque[] = [];
+  let practica: { enunciados: number; pagina: number } | null = null;
+  let pendiente: "ejemplo" | "curiosidad" | null = null;
+  const cerrarPractica = () => {
+    if (practica) salida.push({ tipo: "practica", ...practica });
+    practica = null;
+  };
+
   for (let i = 0; i < bloques.length; i++) {
     const bloque = bloques[i];
+
+    if (bloque.tipo === "marca") {
+      if (bloque.clase === "practica") {
+        practica = practica ?? { enunciados: 0, pagina: bloque.pagina };
+        pendiente = null;
+      } else pendiente = bloque.clase;
+      continue;
+    }
+    if (bloque.tipo === "titulo") {
+      if (esTituloDePractica(bloque.texto)) {
+        practica = practica ?? { enunciados: 0, pagina: bloque.pagina };
+        continue;
+      }
+      cerrarPractica();
+      pendiente = null;
+      salida.push(bloque);
+      continue;
+    }
+
+    // Zona de actividades: hasta el siguiente título (o hasta que vuelva la teoría).
+    if (practica) {
+      if (bloque.tipo === "parrafo" && pareceTeoria(bloque.texto)) {
+        cerrarPractica();
+      } else {
+        if (bloque.tipo === "parrafo") practica.enunciados += contarEnunciados(bloque.texto);
+        continue;
+      }
+    }
+
     if (bloque.tipo === "parrafo") {
       const texto = bloque.texto;
       if (PIE_RE.test(texto) && texto.length < 160) continue;
       if (!legible(texto)) continue;
+      if (/^[«"“]/.test(texto) && esTestimonio(texto)) continue;
+
+      // Ejemplo o curiosidad: aparte, nunca mezclado con la teoría.
+      const clase = pendiente ?? (empiezaEjemplo(texto) ? "ejemplo" : empiezaCuriosidad(texto) ? "curiosidad" : null);
+      if (clase) {
+        pendiente = null;
+        const limpio = clase === "ejemplo" ? sinMarcaDeEjemplo(texto) : sinMarcaDeCuriosidad(texto);
+        if (limpio) salida.push({ tipo: clase, texto: limpio, pagina: bloque.pagina });
+        continue;
+      }
+
+      // Un ejercicio suelto ("4. Calcula…") en mitad del texto.
+      if (esEnunciadoNumerado(texto)) {
+        const anterior = salida[salida.length - 1];
+        if (anterior?.tipo === "practica") anterior.enunciados += 1;
+        else salida.push({ tipo: "practica", enunciados: 1, pagina: bloque.pagina });
+        continue;
+      }
+
+      // Un párrafo que de principio a fin es un caso concreto es un ejemplo.
+      const frases = partirFrases(texto);
+      if (frases.length && frases.filter(esFraseDeEjemplo).length / frases.length >= 0.6) {
+        salida.push({ tipo: "ejemplo", texto, pagina: bloque.pagina });
+        continue;
+      }
+
       if (AVISO_RE.test(texto)) {
-        salida.push({ tipo: "aviso", texto: texto.replace(AVISO_RE, "").trim(), pagina: bloque.pagina });
+        const aviso = texto.replace(AVISO_RE, "").trim();
+        salida.push({ tipo: esCalculoConCifras(aviso) ? "ejemplo" : "aviso", texto: aviso, pagina: bloque.pagina });
         continue;
       }
       const siguiente = bloques[i + 1];
@@ -277,17 +430,25 @@ function leerBloques(contenido: string, paginaInicial: number): Bloque[] {
         continue;
       }
       if (FORMULA_RE.test(texto) && texto.split(/\s+/).length <= 14) {
-        salida.push({ tipo: "formula", texto, pagina: bloque.pagina });
+        // "500 × 21 % = 105 €" no es una fórmula: es la cuenta de un ejemplo.
+        salida.push({ tipo: esCalculoConCifras(texto) ? "ejemplo" : "formula", texto, pagina: bloque.pagina });
         continue;
       }
       salida.push(bloque);
     } else if (bloque.tipo === "lista") {
-      const items = bloque.items.filter((item) => legible(item));
-      if (items.length) salida.push({ ...bloque, items });
+      const items = bloque.items.filter((item) => legible(item) && !esCredito(item));
+      if (!items.length) continue;
+      if (pendiente) {
+        salida.push({ tipo: pendiente, texto: items.join("; "), pagina: bloque.pagina });
+        pendiente = null;
+        continue;
+      }
+      salida.push({ ...bloque, items });
     } else {
       salida.push(bloque);
     }
   }
+  cerrarPractica();
   return salida;
 }
 
@@ -418,11 +579,20 @@ export function extractiveChunkSummary(chunk: Chunk, depth: SummaryDepth): Chunk
   const bloques = leerBloques(chunk.content, chunk.startPage);
 
   // Las frases de todos los párrafos, para elegir las que se quedan.
+  // Las frases de ejemplo sueltas ("Por ejemplo, Lucía compra…") y las
+  // preguntas o enunciados no son teoría: se apartan antes de elegir.
   const frases: Frase[] = [];
+  const ejemplosSueltos = new Map<number, string[]>();
   bloques.forEach((bloque, i) => {
     if (bloque.tipo !== "parrafo") return;
     for (const texto of partirFrases(bloque.texto)) {
-      if (legible(texto)) frases.push({ texto, parrafo: i, orden: frases.length, nota: 0 });
+      if (!legible(texto) || esCredito(texto) || esTestimonio(texto)) continue;
+      if (esEnunciado(texto) || /\?\s*$/.test(texto)) continue;
+      if (esFraseDeEjemplo(texto)) {
+        ejemplosSueltos.set(i, [...(ejemplosSueltos.get(i) ?? []), texto]);
+        continue;
+      }
+      frases.push({ texto, parrafo: i, orden: frases.length, nota: 0 });
     }
   });
   puntuar(frases);
@@ -464,6 +634,17 @@ export function extractiveChunkSummary(chunk: Chunk, depth: SummaryDepth): Chunk
   const avisos: string[] = [];
   const paginas = new Set<number>();
   let tituloPuesto = false;
+  const cupoEjemplos = EJEMPLOS[depth] ?? EJEMPLOS.DETALLADO;
+  let ejemplosPuestos = 0;
+  const ponerEjemplo = (clase: "ejemplo" | "curiosidad", texto: string) => {
+    if (clase === "curiosidad" && !cupoEjemplos.curiosidades) return;
+    if (ejemplosPuestos >= cupoEjemplos.bloques) return;
+    // El recuadro ya dice "Ejemplo": fuera el "Por ejemplo," del principio.
+    const breve = recortarFrases(texto.replace(/^(?:as[ií],\s*)?por\s+ejemplo\s*,?\s*/i, ""), cupoEjemplos.largo);
+    if (!breve) return;
+    ejemplosPuestos++;
+    md.push("", `> [!${clase}] ${cerrar(mayusculaInicial(breve))}`, "");
+  };
 
   const ponerTitulo = () => {
     if (tituloPuesto) return;
@@ -509,12 +690,26 @@ export function extractiveChunkSummary(chunk: Chunk, depth: SummaryDepth): Chunk
           if (!conceptos.includes(limpio)) conceptos.push(limpio);
           if (definicion) definiciones.push({ termino: limpio, definicion: nucleo(definicion, 140) });
         }
-        if (FORMULA_RE.test(f.texto) && f.texto.split(/\s+/).length <= 16) {
+        if (FORMULA_RE.test(f.texto) && f.texto.split(/\s+/).length <= 16 && !esCalculoConCifras(f.texto)) {
           formulas.push({ text: formula(f.texto), page: bloque.pagina });
         }
         md.push(`- ${texto}`);
       }
       if (deEste.length) md.push("");
+      const sueltos = ejemplosSueltos.get(i);
+      if (sueltos?.length && cupoEjemplos.sueltos) ponerEjemplo("ejemplo", sueltos.join(" "));
+      return;
+    }
+
+    if (bloque.tipo === "ejemplo" || bloque.tipo === "curiosidad") {
+      ponerEjemplo(bloque.tipo, bloque.texto);
+      return;
+    }
+
+    if (bloque.tipo === "practica") {
+      const n = bloque.enunciados;
+      const cuantas = n ? `${n} ${n === 1 ? "actividad" : "actividades"}` : "actividades";
+      md.push("", `> [!practica] El libro propone ${cuantas} (pág. ${bloque.pagina}) para comprobar lo aprendido.`, "");
       return;
     }
 
@@ -679,6 +874,8 @@ function esquemaDesdeResumen(documentTitle: string, analyses: ChunkAnalysis[]): 
 
       const aviso = /^>\s*\[!(\w+)\]\s*(.*)$/.exec(linea);
       if (aviso) {
+        // El esquema es solo del temario: ni ejemplos ni actividades.
+        if (aviso[1] === "ejemplo" || aviso[1] === "curiosidad" || aviso[1] === "practica") continue;
         const esFormula = aviso[1] === "formula";
         colgar({
           label: esFormula ? aviso[2] : nucleo(aviso[2], 110),
