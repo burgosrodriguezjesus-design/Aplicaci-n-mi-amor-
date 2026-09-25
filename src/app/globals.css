@@ -160,6 +160,13 @@ h1,
 h2,
 h3 {
   letter-spacing: -0.022em;
+  /* Un título larguísimo sin espacios (un nombre de archivo) se parte. */
+  overflow-wrap: anywhere;
+}
+p,
+li,
+td {
+  overflow-wrap: anywhere;
 }
 
 ::selection {
@@ -413,6 +420,12 @@ h3 {
   font-size: 0.95rem;
   color: var(--text);
   transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+/* En el iPhone, una letra de menos de 16 px hace zoom al tocar el campo. */
+@media (max-width: 640px) {
+  .input {
+    font-size: 16px;
+  }
 }
 .input::placeholder {
   color: var(--text-muted);

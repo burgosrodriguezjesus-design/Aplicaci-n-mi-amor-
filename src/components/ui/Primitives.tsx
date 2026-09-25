@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "./Icon";
 
 export function Skeleton({ className = "" }: { className?: string }) {
@@ -269,8 +271,20 @@ export function Modal({
   children: React.ReactNode;
   footer?: React.ReactNode;
 }) {
-  if (!open) return null;
-  return (
+  // Se pinta directamente en <body>: dentro de una pantalla con animación
+  // de entrada quedaría por debajo de la barra de navegación del móvil.
+  const [montado, setMontado] = useState(false);
+  useEffect(() => setMontado(true), []);
+  useEffect(() => {
+    if (!open) return;
+    const alPulsar = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", alPulsar);
+    return () => window.removeEventListener("keydown", alPulsar);
+  }, [open, onClose]);
+  if (!open || !montado) return null;
+  return createPortal(
     <div
       className="fixed inset-0 z-[90] flex items-end justify-center p-0 sm:items-center sm:p-6"
       style={{ background: "rgba(12,10,24,0.42)", backdropFilter: "blur(6px)" }}
@@ -295,11 +309,12 @@ export function Modal({
             <Icon name="close" size={18} />
           </button>
         </header>
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-4">{children}</div>
+        <div className="max-h-[min(70vh,calc(100dvh-9rem))] overflow-y-auto px-5 py-4">{children}</div>
         {footer ? (
           <footer className="safe-bottom flex justify-end gap-2 border-t px-5 py-3.5">{footer}</footer>
         ) : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

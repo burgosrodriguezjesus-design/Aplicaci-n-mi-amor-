@@ -60,6 +60,7 @@ export function RegenerateDialog({
             type="button"
             className="btn btn-primary"
             disabled={busy}
+            aria-label="Regenerar"
             onClick={() =>
               onSubmit({ instructions: instructions.trim(), depth, explanationStyle: style })
             }
@@ -71,18 +72,18 @@ export function RegenerateDialog({
     >
       <div className="space-y-4">
         {scope === "section" ? (
-          <p className="text-[0.82rem]" style={{ color: "var(--text-muted)" }}>
+          <p className="text-[0.88rem] leading-relaxed" style={{ color: "var(--text-muted)" }}>
             Solo se reescribe este apartado a partir del texto original de sus páginas.
             El resto del material no se vuelve a procesar.
           </p>
         ) : (
-          <p className="text-[0.82rem]" style={{ color: "var(--text-muted)" }}>
+          <p className="text-[0.88rem] leading-relaxed" style={{ color: "var(--text-muted)" }}>
             Se reutiliza el texto ya extraído del PDF: no hay que volver a subir nada.
           </p>
         )}
 
         <label className="block">
-          <span className="mb-1.5 block text-[0.78rem] font-medium">
+          <span className="label">
             ¿Qué quieres cambiar?
           </span>
           <textarea
@@ -94,12 +95,13 @@ export function RegenerateDialog({
           />
         </label>
 
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap gap-2">
           {PRESETS.map((preset) => (
             <button
               key={preset}
               type="button"
-              className="chip"
+              className="filter-chip !min-h-9 !px-3 !text-[0.8rem]"
+              data-active={instructions === preset}
               onClick={() => setInstructions(preset)}
             >
               {preset}
@@ -110,7 +112,7 @@ export function RegenerateDialog({
         {scope !== "outline" ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-1.5 block text-[0.78rem] font-medium">Nivel de resumen</span>
+              <span className="label">Nivel de resumen</span>
               <select
                 className="input"
                 value={depth}
@@ -124,7 +126,7 @@ export function RegenerateDialog({
               </select>
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-[0.78rem] font-medium">Cómo explicártelo</span>
+              <span className="label">Cómo explicártelo</span>
               <select
                 className="input"
                 value={style}

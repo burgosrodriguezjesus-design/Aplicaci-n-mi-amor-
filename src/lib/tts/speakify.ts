@@ -197,13 +197,16 @@ export function speakify(
     if (callout) {
       const [, kind, body] = callout;
       const prefix =
-        kind === "examen"
-          ? "Presta atención a esto: "
-          : kind === "aclaracion"
-            ? "Aclaración añadida: "
-            : kind === "duda"
-              ? "Ojo, este punto no queda claro en el documento original: "
-              : "";
+        ({
+          examen: "Presta atención a esto: ",
+          aclaracion: "Aclaración añadida: ",
+          duda: "Ojo, este punto no queda claro en el documento original: ",
+          recuerda: "Recuerda: ",
+          importante: "Importante: ",
+          formula: "Fórmula: ",
+          ejemplo: "Por ejemplo: ",
+          curiosidad: "Como curiosidad: ",
+        } as Record<string, string>)[kind] ?? "";
       line = prefix + body;
     } else {
       line = line.replace(/^>\s?/, "");
@@ -237,7 +240,9 @@ export function speakify(
     if (bullet) {
       listIndex += 1;
       const label = ORDINALS[listIndex - 1] ?? `Punto ${listIndex}`;
-      line = `${label}, ${bullet[2]}`;
+      // "Primero, el IVA…": minúscula tras la coma, salvo siglas y nombres.
+      const resto = bullet[2].replace(/^(\p{Lu})(\p{Ll})/u, (_, a: string, b: string) => a.toLowerCase() + b);
+      line = `${label}, ${/^(El|La|Los|Las|Un|Una|Unos|Unas|Se|Es|Son|Si|En|Por|Para|Con|Cuando|Cada)\b/.test(bullet[2]) ? resto : bullet[2]}`;
     } else {
       listIndex = 0;
     }

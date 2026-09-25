@@ -24,6 +24,12 @@ const teoria = [
   "El tipo general del 21 % se aplica a la mayoría de los bienes.",
   "Análisis de la cuenta de resultados de la empresa.",
   "Punto de pedido = stock de seguridad + consumo medio diario × plazo de entrega",
+  "Las sociedades limitadas (S.L.) tienen un capital mínimo de 3.000 €.",
+  "La sociedad anónima, S.A., divide su capital en acciones.",
+  "Carlos V heredó los reinos de Castilla y Aragón en 1516.",
+  "Isabel la Católica y Fernando de Aragón unificaron los reinos peninsulares.",
+  "Según Adam Smith, la división del trabajo aumenta la productividad.",
+  "Calcula el precio medio de cada partida de la forma siguiente:",
 ];
 for (const frase of teoria) {
   const mal =
@@ -45,6 +51,8 @@ for (const frase of [
   "Supongamos que una tienda vende 20 camisetas.",
   "El Sr. García compra mercaderías a crédito.",
   "El IVA repercutido es 500 × 21 % = 105 €.",
+  "Juan trabaja en una tienda y cobra 1.200 € al mes.",
+  "La empresa Distribuciones Norte, S.A. compra 200 unidades.",
 ]) comprobar(`ejemplo: «${frase.slice(0, 55)}»`, c.esFraseDeEjemplo(frase));
 comprobar("«Ejemplo 4.1. La empresa…» empieza un ejemplo", c.empiezaEjemplo("Ejemplo 4.1. La empresa Ortega vende…"));
 comprobar("«Ejemplo resuelto» empieza un ejemplo", c.empiezaEjemplo("Ejemplo resuelto"));

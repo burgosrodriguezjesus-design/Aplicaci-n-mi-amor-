@@ -37,12 +37,12 @@ function ControlButton({
       }}
       className={
         variant === "primary"
-          ? "flex h-12 w-12 items-center justify-center rounded-full transition active:scale-95"
-          : "flex h-10 w-10 items-center justify-center rounded-full transition active:scale-95"
+          ? "flex h-16 w-16 items-center justify-center rounded-full transition hover:brightness-110 active:scale-95"
+          : "flex h-11 w-11 items-center justify-center rounded-full transition hover:bg-[var(--surface-hover)] active:scale-95"
       }
       style={
         variant === "primary"
-          ? { background: "var(--accent)", color: "var(--accent-text)" }
+          ? { background: "var(--brand-grad)", color: "#fff", boxShadow: "0 12px 24px -10px rgba(122,80,240,0.8)" }
           : { color: "var(--text-soft)" }
       }
     >
@@ -143,26 +143,24 @@ export function FullPlayer() {
       aria-modal="true"
       aria-label="Reproductor a pantalla completa"
     >
-      <header className="flex items-center justify-between px-4 py-3">
+      <header className="safe-top flex items-center justify-between px-4 py-3">
         <button
           type="button"
-          className="btn btn-ghost !px-2"
+          className="btn btn-ghost btn-icon"
           onClick={() => player.setExpanded(false)}
           aria-label="Minimizar reproductor"
         >
           <Icon name="chevronDown" size={22} />
         </button>
         <div className="text-center">
-          <p className="text-[0.68rem] uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>
-            Escuchando
-          </p>
-          <p className="max-w-[60vw] truncate text-[0.8rem] font-medium">
+          <p className="eyebrow">Escuchando</p>
+          <p className="max-w-[60vw] truncate text-[0.88rem] font-bold">
             {player.queue.documentTitle}
           </p>
         </div>
         <button
           type="button"
-          className="btn btn-ghost !px-2"
+          className="btn btn-ghost btn-icon"
           onClick={player.stop}
           aria-label="Cerrar reproductor"
         >
@@ -170,7 +168,7 @@ export function FullPlayer() {
         </button>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-4 pb-4 md:mx-auto md:w-full md:max-w-5xl md:flex-row">
+      <div className="safe-bottom flex min-h-0 flex-1 flex-col gap-4 overflow-hidden px-4 pb-4 md:mx-auto md:w-full md:max-w-5xl md:flex-row">
         {/* Transcripción sincronizada */}
         <section className="card order-2 flex min-h-0 flex-1 flex-col overflow-hidden md:order-1">
           <div className="flex items-center justify-between border-b px-4 py-2.5">
@@ -206,17 +204,14 @@ export function FullPlayer() {
         {/* Controles */}
         <section className="order-1 flex flex-col gap-4 md:order-2 md:w-80 md:shrink-0">
           <div
-            className="card flex flex-col items-center gap-2 px-5 py-6 text-center"
-            style={{ background: "var(--audio-soft)", borderColor: "transparent" }}
+            className="relative flex flex-col items-center gap-2 overflow-hidden rounded-[var(--radius-card)] px-5 py-6 text-center text-white"
+            style={{ background: "linear-gradient(135deg, #f59e0b 0%, #f0719b 55%, #9b5cf6 100%)" }}
           >
-            <div
-              className="flex h-14 w-14 items-center justify-center rounded-2xl"
-              style={{ background: "var(--audio)", color: "#fff" }}
-            >
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/20">
               <Icon name="headphones" size={26} />
             </div>
-            <h1 className="text-lg font-semibold leading-snug">{player.track.title}</h1>
-            <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            <h1 className="text-lg font-extrabold leading-snug tracking-tight">{player.track.title}</h1>
+            <p className="text-xs text-white/85">
               Capítulo {player.trackIndex + 1} de {player.queue.tracks.length}
             </p>
           </div>
@@ -257,17 +252,10 @@ export function FullPlayer() {
               <button
                 key={speed}
                 type="button"
-                className="chip"
+                className="filter-chip !min-h-9 !px-3"
                 onClick={() => player.setRate(speed)}
-                style={
-                  player.rate === speed
-                    ? {
-                        background: "var(--accent-soft)",
-                        color: "var(--accent)",
-                        borderColor: "var(--accent)",
-                      }
-                    : undefined
-                }
+                data-active={player.rate === speed}
+                aria-label={`Velocidad ${speed.toString().replace(".", ",")}×`}
               >
                 {speed.toString().replace(".", ",")}×
               </button>

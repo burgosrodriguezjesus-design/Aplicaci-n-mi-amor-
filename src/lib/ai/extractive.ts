@@ -206,7 +206,7 @@ type Bloque =
   | { tipo: "titulo"; nivel: number; texto: string; pagina: number }
   | { tipo: "parrafo"; texto: string; pagina: number }
   | { tipo: "lista"; intro: string | null; items: string[]; pagina: number }
-  | { tipo: "aviso"; texto: string; pagina: number }
+  | { tipo: "aviso"; clase: "recuerda" | "importante"; texto: string; pagina: number }
   | { tipo: "formula"; texto: string; pagina: number }
   /** Lo que no es teoría: un ejemplo o un recuadro de curiosidad. */
   | { tipo: "ejemplo" | "curiosidad"; texto: string; pagina: number }
@@ -214,6 +214,14 @@ type Bloque =
   | { tipo: "practica"; enunciados: number; pagina: number }
   /** Marca suelta ("Actividades", "Ejemplo 4.1") para lo que viene después. */
   | { tipo: "marca"; clase: "practica" | "ejemplo" | "curiosidad"; pagina: number };
+
+/**
+ * "Importante:", "Atención:", "Ojo:" avisan de algo que no hay que pasar por
+ * alto; "Recuerda:", "Nota:" repasan. Cada uno con su recuadro.
+ */
+function claseDeAviso(texto: string): "recuerda" | "importante" {
+  return /^\s*(importante|atenci[oó]n|ojo|no olvides|a tener en cuenta)\b/i.test(texto) ? "importante" : "recuerda";
+}
 
 /** Un párrafo de teoría dentro de una zona de actividades: se acabó la práctica. */
 function pareceTeoria(texto: string) {
@@ -417,7 +425,8 @@ function leerBloques(contenido: string, paginaInicial: number): Bloque[] {
 
       if (AVISO_RE.test(texto)) {
         const aviso = texto.replace(AVISO_RE, "").trim();
-        salida.push({ tipo: esCalculoConCifras(aviso) ? "ejemplo" : "aviso", texto: aviso, pagina: bloque.pagina });
+        if (esCalculoConCifras(aviso)) salida.push({ tipo: "ejemplo", texto: aviso, pagina: bloque.pagina });
+        else salida.push({ tipo: "aviso", clase: claseDeAviso(texto), texto: aviso, pagina: bloque.pagina });
         continue;
       }
       const siguiente = bloques[i + 1];
@@ -680,7 +689,7 @@ export function extractiveChunkSummary(chunk: Chunk, depth: SummaryDepth): Chunk
         if (AVISO_RE.test(f.texto)) {
           const aviso = cerrar(mayusculaInicial(f.texto.replace(AVISO_RE, "")));
           avisos.push(aviso);
-          md.push("", `> [!recuerda] ${resaltarDefinicion(aviso).texto}`, "");
+          md.push("", `> [!${claseDeAviso(f.texto)}] ${resaltarDefinicion(aviso).texto}`, "");
           continue;
         }
         const pulida = pulir(f.texto, depth);
@@ -731,7 +740,7 @@ export function extractiveChunkSummary(chunk: Chunk, depth: SummaryDepth): Chunk
         md.push(`> [!formula] ${formula(texto)}`, "");
       } else {
         avisos.push(texto);
-        md.push(`> [!recuerda] ${resaltarDefinicion(texto).texto}`, "");
+        md.push(`> [!${bloque.clase}] ${resaltarDefinicion(texto).texto}`, "");
       }
       return;
     }

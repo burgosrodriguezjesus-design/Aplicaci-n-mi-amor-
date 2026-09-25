@@ -1,5 +1,6 @@
 "use client";
 
+import { Icon } from "@/components/ui/Icon";
 import { createContext, useCallback, useContext, useState } from "react";
 
 type Toast = {
@@ -30,44 +31,41 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={{ toast }}>
       {children}
       <div
-        className="fixed inset-x-0 top-3 z-[100] flex flex-col items-center gap-2 px-4 sm:left-auto sm:right-4 sm:items-end"
+        className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top,0px)+0.75rem)] z-[100] flex flex-col items-center gap-2 px-4 sm:left-auto sm:right-4 sm:items-end"
         role="status"
         aria-live="polite"
       >
-        {toasts.map((item) => (
-          <div
-            key={item.id}
-            className="animate-in card w-full max-w-sm px-4 py-3"
-            style={{
-              boxShadow: "var(--shadow-lg)",
-              borderColor:
-                item.variant === "error"
-                  ? "color-mix(in srgb, var(--danger) 40%, transparent)"
-                  : item.variant === "success"
-                    ? "color-mix(in srgb, var(--success) 40%, transparent)"
-                    : "var(--border-strong)",
-            }}
-          >
-            <p
-              className="text-sm font-semibold"
-              style={{
-                color:
-                  item.variant === "error"
-                    ? "var(--danger)"
-                    : item.variant === "success"
-                      ? "var(--success)"
-                      : "var(--text)",
-              }}
+        {toasts.map((item) => {
+          const color =
+            item.variant === "error" ? "var(--danger)" : item.variant === "success" ? "var(--success)" : "var(--accent)";
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setToasts((current) => current.filter((t) => t.id !== item.id))}
+              title="Cerrar"
+              className="animate-in card pointer-events-auto flex w-full max-w-sm items-start gap-3 px-4 py-3 text-left"
+              style={{ boxShadow: "var(--shadow-lg)", borderColor: `color-mix(in srgb, ${color} 35%, var(--border))` }}
             >
-              {item.title}
-            </p>
-            {item.description ? (
-              <p className="mt-0.5 text-xs" style={{ color: "var(--text-muted)" }}>
-                {item.description}
-              </p>
-            ) : null}
-          </div>
-        ))}
+              <span className="mt-0.5 shrink-0" style={{ color }}>
+                <Icon
+                  name={item.variant === "error" ? "warning" : item.variant === "success" ? "checkCircle" : "info"}
+                  size={19}
+                />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[0.9rem] font-bold" style={{ color: "var(--text)" }}>
+                  {item.title}
+                </span>
+                {item.description ? (
+                  <span className="mt-0.5 block text-[0.8rem]" style={{ color: "var(--text-muted)" }}>
+                    {item.description}
+                  </span>
+                ) : null}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </ToastContext.Provider>
   );

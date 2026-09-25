@@ -210,6 +210,7 @@ const CALLOUT_META: Record<string, { label: string; icon: string; className: str
   },
   cita: { label: "", icon: "quote", className: "callout-cita" },
   recuerda: { label: "Recuerda", icon: "lightbulb", className: "callout-recuerda" },
+  importante: { label: "Importante", icon: "warning", className: "callout-examen" },
   formula: { label: "Fórmula", icon: "sigma", className: "callout-formula" },
   ejemplo: { label: "Ejemplo · no es teoría", icon: "quote", className: "callout-ejemplo" },
   curiosidad: { label: "Curiosidad · no es teoría", icon: "sparkles", className: "callout-ejemplo" },

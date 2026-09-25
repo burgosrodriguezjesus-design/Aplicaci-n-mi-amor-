@@ -55,7 +55,7 @@ const NUMERADO_RE = /^(?:\d{1,2}|[a-h])[.)]\s+/i;
  * número delante, solo es un ejercicio si se dirige al alumno.
  */
 const AL_ALUMNO_RE =
-  /\b(?:tu|tus|te|ti|t[uú]|vosotr[oa]s|vuestr[oa]s?|tu\s+cuaderno|compañer[oa]s?|razona\s+tu\s+respuesta|justifica\s+tu\s+respuesta)\b|:\s*$/i;
+  /\b(?:tu|tus|te|ti|t[uú]|vosotr[oa]s|vuestr[oa]s?|tu\s+cuaderno|compañer[oa]s?|razona\s+tu\s+respuesta|justifica\s+tu\s+respuesta)\b/i;
 
 /** Créditos de imagen, datos de la editorial, enlaces: nunca son contenido. */
 const CREDITO_RE =
@@ -68,8 +68,21 @@ const PERSONA_RE = new RegExp(
   `(?:^|[\\s(«"“¿¡])(?:${NOMBRES})(?:\\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?(?=[\\s,.;:)»"”]|$)`,
   "u",
 );
+/**
+ * Un nombre de pila solo delata un ejemplo si la persona hace algo cotidiano
+ * con cifras concretas ("Lucía compra una lámpara de 80 €"). "Carlos V heredó
+ * los reinos…" o "Isabel la Católica unificó…" son historia, es decir, temario.
+ */
+const REY_RE = new RegExp(`(?:${NOMBRES})\\s+[IVXL]{1,5}\\b`, "u");
+const ACCION_COTIDIANA_RE =
+  /\b(?:compra|compran|compró|vende|venden|vendió|paga|pagan|pagó|cobra|cobran|cobró|trabaja|trabajan|quiere|quieren|necesita|necesitan|decide|decidió|recibe|recibió|abre|abrió|monta|contrata|contrató|gana|ganó|gasta|gastó|ahorra|pide|pidió|debe)\b/i;
+const CIFRA_CONCRETA_RE =
+  /\d[\d.,]*\s*(?:€|euros?\b|%|unidades\b|uds?\.|kg\b|horas?\b|días\b|meses\b)|\b\d{1,3}(?:\.\d{3})+\b/i;
 const TRATAMIENTO_RE = /\b(?:Sr|Sra|Srta|Dña|Dª|D)\.\s*[A-ZÁÉÍÓÚÑ]|\b(?:don|doña)\s+[A-ZÁÉÍÓÚÑ]/u;
-const EMPRESA_RE = /\b(?:S\.\s?L\.(?:\s?U\.)?|S\.\s?A\.(?:\s?U\.)?|S\.\s?Coop\.|S\.\s?L\.\s?L\.|C\.\s?B\.)(?=[\s,;:)]|$)/;
+/** "Muebles Ortega, S.L.": la forma jurídica detrás del nombre propio de una
+ * empresa. Sin nombre delante ("las sociedades limitadas (S.L.)") es teoría. */
+const EMPRESA_RE =
+  /[A-ZÁÉÍÓÚÑ][\p{L}]+,?\s+(?:S\.\s?L\.(?:\s?U\.)?|S\.\s?A\.(?:\s?U\.)?|S\.\s?Coop\.|S\.\s?L\.\s?L\.|C\.\s?B\.)(?=[\s,;:)]|$)/u;
 /** Un cálculo con cifras concretas: "500 × 21 % = 105 €". */
 const CALCULO_RE = /\d[\d.,]*\s*(?:€|%|euros?|uds?\.?|unidades)?\s*[×x·*+\-−/:]\s*\d[\d.,]*\s*(?:€|%|euros?)?\s*=\s*-?\d/;
 const ESCENARIO_RE =
@@ -151,7 +164,7 @@ export function esFraseDeEjemplo(frase: string) {
     EMPRESA_RE.test(t) ||
     TRATAMIENTO_RE.test(t) ||
     CALCULO_RE.test(t) ||
-    PERSONA_RE.test(t)
+    (PERSONA_RE.test(t) && !REY_RE.test(t) && (ACCION_COTIDIANA_RE.test(t) || CIFRA_CONCRETA_RE.test(t)))
   );
 }
 

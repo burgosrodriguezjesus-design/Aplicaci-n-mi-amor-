@@ -265,7 +265,7 @@ export function UploadZone() {
               <Icon name="cloudUpload" size={32} />
             </div>
           )}
-          <div>
+          <div className="w-full min-w-0">
             <p className="text-[1.15rem] font-extrabold tracking-tight sm:text-[1.3rem]">
               {file ? file.name : "Arrastra aquí tu PDF"}
             </p>
@@ -507,7 +507,7 @@ export function UploadZone() {
                 ? "Subiendo PDF…"
                 : (status?.statusMessage ?? "Preparando…")}
             </span>
-            <span className="font-bold tabular-nums" style={{ color: "var(--text-muted)" }}>
+            <span className="shrink-0 whitespace-nowrap font-bold tabular-nums" style={{ color: "var(--text-muted)" }}>
               {phase === "uploading" ? `${uploadPercent} %` : `${status?.progress ?? 0} %`}
             </span>
           </div>
