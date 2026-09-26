@@ -43,23 +43,36 @@ function construir(node: OutlineNodeDto, id: string, depth: number, rama: number
   };
 }
 
-function acortar(texto: string, maximo: number) {
-  if (texto.length <= maximo) return texto;
-  const corte = texto.slice(0, maximo);
-  return `${corte.slice(0, Math.max(corte.lastIndexOf(" "), maximo * 0.6)).replace(/[,;:.\s]+$/, "")}…`;
+/** Esquemas antiguos: su etiqueta pudo guardarse cortada con "…". */
+function sinPuntos(texto: string) {
+  return texto.replace(/\s*(…|\.{3})\s*$/, "").trim();
 }
 
-/** "Término: explicación" → el término destacado y la explicación corta. */
-function partes(node: OutlineNodeDto, maximo: number) {
+/** "Término: explicación" → el término destacado y la explicación, entera. */
+function partes(node: OutlineNodeDto) {
   const kind = node.kind ?? "concept";
-  const label = node.label.trim();
+  const label = sinPuntos(node.label.trim());
   if (kind === "concept" || kind === "detail") {
     const corte = label.indexOf(": ");
     if (corte > 0 && corte <= 60) {
-      return { termino: label.slice(0, corte), texto: acortar(label.slice(corte + 2), maximo) };
+      return { termino: label.slice(0, corte), texto: label.slice(corte + 2) };
     }
   }
-  return { termino: null, texto: acortar(label, maximo + 30) };
+  return { termino: null, texto: label };
+}
+
+/** Los recuadros con mucho texto, algo más anchos: menos líneas. */
+function anchoMaximo(n: Nodo, M: Medidas) {
+  const largo = n.node.label.length;
+  const extra = n.depth === 0 ? 40 : largo > 200 ? 110 : largo > 120 ? 60 : 0;
+  return M.ancho + extra;
+}
+
+/** Mayúsculas solo en títulos cortos: una frase larga en mayúsculas no se lee. */
+function enMayusculas(n: Nodo, estilo: EstiloDiagrama) {
+  const kind = n.node.kind ?? "concept";
+  const titulo = n.depth === 0 || kind === "chapter" || kind === "section" || kind === "subsection";
+  return estilo === "cuadro" && n.depth <= 1 && titulo && n.node.label.length <= 60;
 }
 
 /** Palabra que une un recuadro con sus hijos en el mapa conceptual. */
@@ -235,7 +248,7 @@ function Contenido({
   onPageClick?: (page: number) => void;
 }) {
   const kind = n.node.kind ?? "concept";
-  const { termino, texto } = partes(n.node, estilo === "cuadro" ? 90 : 70);
+  const { termino, texto } = partes(n.node);
   const titulo = n.depth === 0 || kind === "chapter" || kind === "section" || kind === "subsection";
   return (
     <>
@@ -260,8 +273,8 @@ function Contenido({
             fontWeight: n.depth === 0 ? 800 : titulo ? 750 : kind === "key" ? 650 : 500,
             fontSize: n.depth === 0 ? "0.98rem" : titulo ? "0.86rem" : "0.8rem",
             color: titulo || kind === "key" ? "var(--text)" : "var(--text-soft)",
-            textTransform: estilo === "cuadro" && n.depth <= 1 ? "uppercase" : undefined,
-            letterSpacing: estilo === "cuadro" && n.depth <= 1 ? "0.01em" : undefined,
+            textTransform: enMayusculas(n, estilo) ? "uppercase" : undefined,
+            letterSpacing: enMayusculas(n, estilo) ? "0.01em" : undefined,
           }}
         >
           {texto}
@@ -597,7 +610,7 @@ export function OutlineDiagram({
                     left: c?.x ?? 0,
                     top: c?.y ?? 0,
                     width: "max-content",
-                    maxWidth: M.ancho + (n.depth === 0 ? 40 : 0),
+                    maxWidth: anchoMaximo(n, M),
                     boxShadow: n.depth <= 1 ? "var(--shadow-xs)" : undefined,
                     ...estiloNodo(n, estilo),
                   }}
@@ -626,7 +639,7 @@ export function OutlineDiagram({
             aria-label={`Esquema: ${node.label}`}
           >
             <div className="flex items-center gap-2 px-1">
-              <p className="min-w-0 flex-1 truncate text-[0.95rem] font-extrabold">{node.label}</p>
+              <p className="min-w-0 flex-1 text-[0.95rem] font-extrabold leading-snug">{node.label}</p>
               {controles}
             </div>
             <div className="min-h-0 flex-1 [&>div]:h-full">{lienzo}</div>

@@ -50,7 +50,7 @@ function TemaDiagrama({
           </span>
           <span className="min-w-0 flex-1">
             <span className="eyebrow">Tema {index + 1}</span>
-            <span className="block truncate text-[0.98rem] font-extrabold tracking-tight">{node.label}</span>
+            <span className="block text-[0.98rem] font-extrabold leading-snug tracking-tight">{node.label}</span>
           </span>
         </header>
       ) : null}

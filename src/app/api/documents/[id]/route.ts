@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { fail, ok, route } from "@/lib/api";
 import { storage } from "@/lib/storage";
+import { completarEsquema } from "@/lib/ai/completar-esquema";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -40,6 +41,21 @@ export const GET = route(async (_request: Request, { params }: Params) => {
 
   const summary = document.summaries[0] ?? null;
   const outline = document.outlines[0] ?? null;
+  // Esquemas antiguos con frases cortadas ("…"): se completan con el resumen
+  // y se guardan ya arreglados, una sola vez.
+  let arbol = outline ? JSON.parse(outline.tree) : null;
+  if (outline && arbol && outline.tree.includes("…")) {
+    const { tree, cambiado } = completarEsquema(
+      arbol,
+      (summary?.sections ?? []).map((section) => section.markdown),
+    );
+    if (cambiado) {
+      arbol = tree;
+      await prisma.outline
+        .update({ where: { id: outline.id }, data: { tree: JSON.stringify(tree) } })
+        .catch(() => undefined);
+    }
+  }
   const progress = document.progressRows[0] ?? null;
 
   return ok({
@@ -89,7 +105,7 @@ export const GET = route(async (_request: Request, { params }: Params) => {
           id: outline.id,
           provider: outline.provider,
           version: outline.version,
-          tree: JSON.parse(outline.tree),
+          tree: arbol,
         }
       : null,
     tracks: document.audioTracks.map((track) => ({

@@ -97,6 +97,12 @@ comprobar("el temario sigue entero", ["Concepto y naturaleza del IVA", "Tipos im
 comprobar("resalta el término definido", /\*\*impuesto sobre el valor añadido \(IVA\)\*\*/i.test(resumen));
 comprobar("los recuadros «Recuerda» destacados", (resumen.match(/\[!recuerda\]/g) ?? []).length >= 2);
 comprobar("glosario en la visión general", /Conceptos imprescindibles[\s\S]*\*\*Existencias:\*\*/i.test(resumen), resumen.slice(0, 600));
+{
+  const cortadas = lineasEsquema.filter((l) => /…|\.\.\.\s*$/.test(l));
+  comprobar("el esquema no corta frases con «…»", cortadas.length === 0, cortadas.slice(0, 3).join(" | "));
+  const iva = lineasEsquema.find((l) => /\[concept\].*impuesto sobre el valor añadido/i.test(l)) ?? "";
+  comprobar("la definición del esquema llega hasta el final de la frase", /consumo/i.test(iva), iva);
+}
 comprobar("sin conectores de relleno", !/^- Por eso se dice que/m.test(resumen));
 console.log(fallos ? `\n${fallos} comprobación(es) con fallos` : "\nResumen y esquema profesionales");
 process.exit(fallos ? 1 : 0);

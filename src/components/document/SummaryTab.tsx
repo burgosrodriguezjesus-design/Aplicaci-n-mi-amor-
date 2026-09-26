@@ -82,7 +82,7 @@ export function SummaryTab({
               >
                 {hecho ? <Icon name="check" size={11} strokeWidth={3.2} /> : index + 1}
               </span>
-              <span className={`min-w-0 flex-1 truncate ${hecho ? "line-through decoration-1 opacity-80" : ""}`}>
+              <span className={`min-w-0 flex-1 leading-snug ${hecho ? "line-through decoration-1 opacity-80" : ""}`}>
                 {tituloCorto(section.title)}
               </span>
             </a>

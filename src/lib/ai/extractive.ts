@@ -128,20 +128,26 @@ function cerrar(texto: string) {
   return /[.!?:…)]$/.test(t) ? t : `${t}.`;
 }
 
-/** Acorta sin partir palabras. */
-function acortar(texto: string, maximo: number) {
-  const t = texto.trim().replace(/\s+/g, " ");
-  if (t.length <= maximo) return t;
-  const corte = t.slice(0, maximo);
-  const espacio = corte.lastIndexOf(" ");
-  return `${corte.slice(0, espacio > maximo * 0.6 ? espacio : maximo).replace(/[,;:\s]+$/, "")}…`;
+/** Una frase entera, sin romperla nunca con puntos suspensivos. */
+function entera(texto: string) {
+  return texto.replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
 }
 
-/** Primera cláusula de una explicación: lo que cabe en un esquema. */
-function nucleo(texto: string, maximo = 90) {
-  const limpio = texto.replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
-  const primera = limpio.split(/(?<=[.;])\s|,\s(?:que|lo que|es decir|ya que|porque|aunque|mientras)\b/)[0];
-  return acortar(primera.replace(/[.;,:]+$/, ""), maximo);
+/**
+ * La idea de una explicación para el esquema: su primera frase COMPLETA.
+ * Solo si esa frase es muy larga se queda en su oración principal (hasta
+ * ", que…", ", es decir…"), que también se lee entera. Nunca termina a
+ * medias ni con "…".
+ */
+function nucleo(texto: string, largo = 220) {
+  const limpio = entera(texto);
+  const primera = (partirFrases(limpio)[0] ?? limpio).replace(/[.;,:]+$/, "").trim();
+  if (primera.length <= largo) return primera;
+  const principal = primera
+    .split(/,\s(?:que|lo que|es decir|ya que|porque|aunque|mientras)\b|;\s/)[0]
+    .replace(/[.;,:]+$/, "")
+    .trim();
+  return principal.length >= 40 ? principal : primera;
 }
 
 /** ¿Es un trozo de texto legible? (descarta restos del escaneo) */
@@ -198,7 +204,8 @@ function recortarFrases(texto: string, maximo: number) {
     if ((salida + " " + frase).trim().length > maximo) break;
     salida = `${salida} ${frase}`.trim();
   }
-  return salida || acortar(frases[0] ?? texto, maximo);
+  // Nunca a medias: si ni la primera cabe, va la primera entera.
+  return salida || entera(frases[0] ?? texto);
 }
 
 /* ── Lectura del fragmento en bloques ──────────────────────────────── */
@@ -494,7 +501,7 @@ function leerBloques(contenido: string, paginaInicial: number): Bloque[] {
 /** Separa un párrafo en frases sin romper abreviaturas ni numeraciones. */
 function partirFrases(texto: string): string[] {
   return texto
-    .replace(/\b(etc|p\.\s?ej|art|arts|núm|pág|págs|aprox|Sr|Sra|Dr|Dra|Ud|Uds)\./gi, "$1§")
+    .replace(/\b(etc|p\.\s?ej|art|arts|núm|pág|págs|aprox|Sr|Sra|Dr|Dra|Ud|Uds|S\.\s?[AL]|S\.\s?Coop)\./gi, (m) => m.replace(/\./g, "§"))
     .split(/(?<=[.!?;])\s+(?=[¿¡"«(]?[A-ZÁÉÍÓÚÑ0-9])/)
     .map((f) => f.replace(/§/g, ".").trim())
     .filter(Boolean);
@@ -727,7 +734,7 @@ export function extractiveChunkSummary(chunk: Chunk, depth: SummaryDepth): Chunk
         if (termino) {
           const limpio = mayusculaInicial(termino.replace(/\s*\(([^)]+)\)/, " ($1)").trim());
           if (!conceptos.includes(limpio)) conceptos.push(limpio);
-          if (definicion) definiciones.push({ termino: limpio, definicion: nucleo(definicion, 140) });
+          if (definicion) definiciones.push({ termino: limpio, definicion: nucleo(definicion) });
         }
         if (FORMULA_RE.test(f.texto) && f.texto.split(/\s+/).length <= 16 && !esCalculoConCifras(f.texto)) {
           formulas.push({ text: formula(f.texto), page: bloque.pagina });
@@ -917,7 +924,7 @@ function esquemaDesdeResumen(documentTitle: string, analyses: ChunkAnalysis[]): 
         if (aviso[1] === "ejemplo" || aviso[1] === "curiosidad" || aviso[1] === "practica") continue;
         const esFormula = aviso[1] === "formula";
         colgar({
-          label: esFormula ? aviso[2] : nucleo(aviso[2], 110),
+          label: esFormula ? aviso[2] : nucleo(aviso[2]),
           kind: esFormula ? "formula" : "key",
           page: pagina,
         });
@@ -936,7 +943,7 @@ function esquemaDesdeResumen(documentTitle: string, analyses: ChunkAnalysis[]): 
             .replace(/^(?:que\s+(?:se\s+)?)?(?:para|aplica(?:n)?\s+a|se\s+aplica(?:n)?\s+a)?\s*/i, "")
             .replace(/[.]\s*$/, "");
           nodo = {
-            label: detalle ? `${etiqueta[1].replace(/:$/, "")}: ${acortar(detalle, 80)}` : etiqueta[1],
+            label: detalle ? `${etiqueta[1].replace(/:$/, "")}: ${entera(detalle)}` : etiqueta[1],
             kind: "detail",
             page: pagina,
           };
@@ -945,17 +952,17 @@ function esquemaDesdeResumen(documentTitle: string, analyses: ChunkAnalysis[]): 
           const nombrado = /se (?:denomina|denominan|llama|llaman|conoce como)\s+\*\*([^*]+)\*\*\s+(?:porque|ya que|por)\s+(.*)$/i.exec(texto);
           if (def) {
             const verbo = /^(es|son)$/i.test(def[2]) ? "" : `${def[2]} `;
-            nodo = { label: `${mayusculaInicial(def[1])}: ${nucleo(verbo + def[3], 90)}`, kind: "concept", page: pagina };
+            nodo = { label: `${mayusculaInicial(def[1])}: ${nucleo(verbo + def[3])}`, kind: "concept", page: pagina };
           } else if (nombrado) {
-            nodo = { label: `${mayusculaInicial(nombrado[1])}: ${nucleo(nombrado[2], 90)}`, kind: "concept", page: pagina };
+            nodo = { label: `${mayusculaInicial(nombrado[1])}: ${nucleo(nombrado[2])}`, kind: "concept", page: pagina };
           } else if (/\*\*[^*]+\*\*/.test(texto)) {
             const termino = /\*\*([^*]+)\*\*/.exec(texto)![1];
-            nodo = { label: `${mayusculaInicial(termino)}: ${nucleo(texto.replace(/\*\*/g, ""), 90)}`, kind: "concept", page: pagina };
+            nodo = { label: `${mayusculaInicial(termino)}: ${nucleo(texto.replace(/\*\*/g, ""))}`, kind: "concept", page: pagina };
           } else if (PROCEDIMIENTO_RE.test(texto) && texto.split(/\s+/).length <= 40) {
             const [, sujeto, verbo, resto] = PROCEDIMIENTO_RE.exec(texto)!;
-            nodo = { label: `${mayusculaInicial(sujeto)}: ${nucleo(`${verbo} ${resto}`, 90)}`, kind: "concept", page: pagina };
+            nodo = { label: `${mayusculaInicial(sujeto)}: ${nucleo(`${verbo} ${resto}`)}`, kind: "concept", page: pagina };
           } else if (DATO_RE.test(texto) || IMPORTANT_RE.test(texto)) {
-            nodo = { label: nucleo(texto, 100), kind: "detail", page: pagina };
+            nodo = { label: nucleo(texto), kind: "detail", page: pagina };
           }
         }
         if (!nodo) continue;
@@ -968,9 +975,10 @@ function esquemaDesdeResumen(documentTitle: string, analyses: ChunkAnalysis[]): 
 
       // Frase que presenta una lista ("Se clasifican en:"): agrupa sus tipos.
       if (/:\s*$/.test(linea) && lineas[i + 2]?.trim().startsWith("- ")) {
-        const presenta = nucleo(linea.replace(/:\s*$/, ""), 90);
+        // La frase que presenta la lista es la última del párrafo, entera.
+        const presenta = (partirFrases(entera(linea)).pop() ?? entera(linea)).replace(/[.;,:\s]+$/, "");
         grupo = {
-          label: presenta.endsWith("…") ? presenta : `${presenta}:`,
+          label: `${presenta}:`,
           kind: "concept",
           page: pagina,
           children: [],

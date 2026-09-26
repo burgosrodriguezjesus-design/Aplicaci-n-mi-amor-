@@ -295,6 +295,8 @@ seccion("4. Documento: resumen, esquema, audio y PDF");
       return malos;
     });
     comprobar(`«${vista}»: ningún recuadro pisa a otro`, solapes === 0, `${solapes} solapes`);
+    const cortados = await nodos.evaluateAll((ns) => ns.map((n) => n.textContent ?? "").filter((t) => /…|\.\.\.\s*$/.test(t)));
+    comprobar(`«${vista}»: ninguna frase cortada con «…»`, cortados.length === 0, cortados.slice(0, 2).join(" | "));
     await page.getByRole("button", { name: /Contraer todo/ }).click();
     await page.waitForTimeout(400);
     const contraidos = await nodos.count();
