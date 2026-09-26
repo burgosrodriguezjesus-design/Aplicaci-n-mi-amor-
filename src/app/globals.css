@@ -202,6 +202,12 @@ td {
   display: none;
 }
 
+/* Los elementos de una rejilla pueden encogerse: si no, un título largo
+   sin espacios estira la columna y la pantalla entera se sale de lado. */
+.grid > * {
+  min-width: 0;
+}
+
 /* ── Textos ─────────────────────────────────────────────────── */
 
 .eyebrow {

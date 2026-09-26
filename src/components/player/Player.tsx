@@ -59,13 +59,13 @@ export function MiniPlayer() {
 
   return (
     <div
-      className="animate-in fixed inset-x-0 bottom-[calc(4.8rem+env(safe-area-inset-bottom,0px))] z-40 px-2 md:bottom-3 md:left-auto md:right-4 md:w-[26rem] md:px-0"
+      className="animate-in fixed inset-x-0 bottom-[calc(7.1rem+env(safe-area-inset-bottom,0px))] z-40 px-2 md:bottom-3 md:left-auto md:right-4 md:w-[26rem] md:px-0"
       role="region"
       aria-label="Reproductor"
     >
       <div
         className="card cursor-pointer overflow-hidden !rounded-2xl"
-        style={{ boxShadow: "var(--shadow-lg)", background: "var(--glass)", backdropFilter: "saturate(180%) blur(18px)" }}
+        style={{ boxShadow: "var(--shadow-lg)", background: "var(--surface)" }}
         onClick={() => player.setExpanded(true)}
       >
         <div className="flex items-center gap-2.5 px-3 py-2.5">

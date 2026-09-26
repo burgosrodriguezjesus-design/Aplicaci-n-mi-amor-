@@ -94,7 +94,7 @@ export function InstallPrompt() {
   return (
     <div
       className="fixed inset-x-0 z-40 px-4"
-      style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 6.2rem)" }}
+      style={{ bottom: "calc(env(safe-area-inset-bottom, 0px) + 7.1rem)" }}
       role="complementary"
       aria-label="Instalar alicIA"
     >

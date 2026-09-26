@@ -64,21 +64,24 @@ async function nuevaPagina(opciones = {}) {
 }
 
 async function sinDesborde(page, etiqueta) {
-  const ancho = await page.evaluate(() => {
+  // Se compara con el ancho real de la pantalla: en modo móvil, si algo se
+  // sale, el navegador ensancha la página entera (y innerWidth con ella).
+  const pantalla = page.viewportSize()?.width ?? 0;
+  const ancho = await page.evaluate((pantalla) => {
     const doc = document.documentElement;
-    const sobrante = doc.scrollWidth - window.innerWidth;
+    const sobrante = Math.max(doc.scrollWidth, window.innerWidth) - pantalla;
     let culpable = "";
     if (sobrante > 1) {
       for (const el of document.querySelectorAll("body *")) {
         const r = el.getBoundingClientRect();
-        if (r.right > window.innerWidth + 1 && r.width > 0 && getComputedStyle(el).position !== "fixed") {
+        if (r.right > pantalla + 1 && r.width > 0 && getComputedStyle(el).position !== "fixed") {
           culpable = `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 60)} (${Math.round(r.right)}px)`;
           break;
         }
       }
     }
     return { sobrante, culpable };
-  });
+  }, pantalla);
   comprobar(`${etiqueta}: nada se sale por los lados`, ancho.sobrante <= 1, `${ancho.sobrante}px · ${ancho.culpable}`);
 }
 
@@ -292,6 +295,35 @@ seccion("4. Documento: resumen, esquema, audio y PDF");
   await botonesConNombre(page, "audio");
   const pausa = page.getByRole("region", { name: "Reproductor" }).getByRole("button", { name: /Pausar|Reproducir/ });
   if (await pausa.count()) await pausa.first().click();
+}
+
+/* ── 4b. Reproductor en el móvil ───────────────────────────────── */
+seccion("4b. El reproductor no tapa nada en el móvil");
+{
+  const m = await nuevaPagina({
+    viewport: { width: 390, height: 844 },
+    isMobile: true,
+    storageState: await contexto.storageState(),
+  });
+  await m.page.goto(`${BASE}/documento/${docId}?tab=audio`);
+  await m.page.getByRole("button", { name: /Escuchar todo/ }).click();
+  const reproductor = m.page.getByRole("region", { name: "Reproductor" });
+  await reproductor.waitFor({ timeout: 10_000 });
+  // Se navega tocando la barra inferior (recargar la página pararía el audio).
+  for (const [ruta, ir] of [
+    ["documento", async () => {}],
+    ["/inicio", () => m.page.getByRole("navigation", { name: "Principal" }).last().getByRole("link", { name: "Inicio" }).click()],
+    ["/biblioteca", () => m.page.getByRole("navigation", { name: "Principal" }).last().getByRole("link", { name: "Biblioteca" }).click()],
+  ]) {
+    await ir();
+    await m.page.waitForTimeout(1200);
+    await reproductor.waitFor({ timeout: 10_000 });
+    const a = await reproductor.boundingBox();
+    const b = await m.page.getByRole("link", { name: "Subir PDF" }).last().boundingBox();
+    const tocan = a && b && a.y + a.height > b.y && b.y + b.height > a.y && a.x + a.width > b.x && b.x + b.width > a.x;
+    comprobar(`${ruta}: el reproductor no tapa el botón «Subir»`, Boolean(a && b) && !tocan, JSON.stringify({ a, b }));
+  }
+  await m.contexto.close();
 }
 
 /* ── 5. Inicio con documento ───────────────────────────────────── */
