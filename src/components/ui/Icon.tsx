@@ -77,6 +77,9 @@ import {
   WandSparkles,
   X,
   Zap,
+  ZoomIn,
+  ZoomOut,
+  Maximize,
   type LucideIcon,
 } from "lucide-react";
 
@@ -153,6 +156,9 @@ const ICONS: Record<string, LucideIcon> = {
   volume: Volume2,
   notebook: NotebookPen,
   checklist: ListChecks,
+  zoomIn: ZoomIn,
+  zoomOut: ZoomOut,
+  fullscreen: Maximize,
 };
 
 export function Icon({

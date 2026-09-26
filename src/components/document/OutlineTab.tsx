@@ -10,6 +10,56 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { OutlineNodeDto } from "@/lib/client/types";
 import { Icon } from "@/components/ui/Icon";
 import { EmptyState } from "@/components/ui/Primitives";
+import { LazyBlock } from "@/components/ui/LazyBlock";
+import { OutlineDiagram, type EstiloDiagrama } from "./OutlineDiagram";
+
+type Vista = EstiloDiagrama | "lista";
+const VISTAS: { value: Vista; label: string; corto: string; icon: string }[] = [
+  { value: "cuadro", label: "Cuadro", corto: "Cuadro", icon: "outline" },
+  { value: "mapa", label: "Mapa conceptual", corto: "Mapa", icon: "mind" },
+  { value: "lista", label: "Lista", corto: "Lista", icon: "checklist" },
+];
+const CLAVE_VISTA = "alicia-esquema-vista";
+
+/** Un tema dibujado como cuadro o mapa, en su tarjeta. */
+function TemaDiagrama({
+  node,
+  index,
+  numerado,
+  estilo,
+  orden,
+  onPageClick,
+}: {
+  node: OutlineNodeDto;
+  index: number;
+  numerado: boolean;
+  estilo: EstiloDiagrama;
+  orden: { tipo: "abrir" | "cerrar"; n: number };
+  onPageClick?: (page: number) => void;
+}) {
+  const diagrama = <OutlineDiagram node={node} estilo={estilo} orden={orden} onPageClick={onPageClick} />;
+  return (
+    <section className="card overflow-hidden">
+      {numerado ? (
+        <header className="flex items-center gap-3 border-b px-4 py-3 sm:px-5">
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[0.9rem] font-extrabold text-white"
+            style={{ background: "var(--brand-grad)" }}
+          >
+            {index + 1}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="eyebrow">Tema {index + 1}</span>
+            <span className="block truncate text-[0.98rem] font-extrabold tracking-tight">{node.label}</span>
+          </span>
+        </header>
+      ) : null}
+      <div className="p-2 sm:p-3">
+        {index < 2 ? diagrama : <LazyBlock minHeight={420}>{diagrama}</LazyBlock>}
+      </div>
+    </section>
+  );
+}
 
 /** Ruta estable de cada nodo, usada como identificador de apertura. */
 function pathOf(indexes: number[]) {
@@ -266,6 +316,26 @@ export function OutlineTab({
 }) {
   const allPaths = useMemo(() => (tree ? collectPaths(tree.nodes) : []), [tree]);
   const [open, setOpen] = useState<Set<string>>(new Set());
+  const [vista, setVista] = useState<Vista>("cuadro");
+  const [orden, setOrden] = useState<{ tipo: "abrir" | "cerrar"; n: number }>({ tipo: "abrir", n: 0 });
+
+  // La vista elegida se recuerda en este dispositivo.
+  useEffect(() => {
+    try {
+      const guardada = localStorage.getItem(CLAVE_VISTA);
+      if (guardada === "cuadro" || guardada === "mapa" || guardada === "lista") setVista(guardada);
+    } catch {
+      /* sin almacenamiento: se usa la vista por defecto */
+    }
+  }, []);
+  const elegirVista = (nueva: Vista) => {
+    setVista(nueva);
+    try {
+      localStorage.setItem(CLAVE_VISTA, nueva);
+    } catch {
+      /* sin almacenamiento */
+    }
+  };
 
   // Por defecto se muestran los dos primeros niveles abiertos.
   useEffect(() => {
@@ -294,14 +364,42 @@ export function OutlineTab({
   // Si el primer nivel son temas, cada uno va en su tarjeta; si no, un árbol.
   const porTemas = tree.nodes.every((node) => (node.kind ?? "chapter") === "chapter");
 
+  const expandir = () => {
+    setOpen(new Set(allPaths));
+    setOrden((o) => ({ tipo: "abrir", n: o.n + 1 }));
+  };
+  const contraer = () => {
+    setOpen(new Set());
+    setOrden((o) => ({ tipo: "cerrar", n: o.n + 1 }));
+  };
+
   return (
-    <div className="mx-auto max-w-4xl space-y-4">
+    <div className={`mx-auto space-y-4 ${vista === "lista" ? "max-w-4xl" : "max-w-6xl"}`}>
+      <div className="segmented w-full sm:w-auto" role="radiogroup" aria-label="Forma del esquema">
+        {VISTAS.map((opcion) => (
+          <button
+            key={opcion.value}
+            type="button"
+            role="radio"
+            aria-checked={vista === opcion.value}
+            aria-label={opcion.label}
+            data-active={vista === opcion.value}
+            onClick={() => elegirVista(opcion.value)}
+            className="min-w-0 flex-1 !px-2 sm:flex-none sm:!px-[0.95rem]"
+          >
+            <Icon name={opcion.icon} size={16} />
+            <span className="sm:hidden">{opcion.corto}</span>
+            <span className="hidden sm:inline">{opcion.label}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen(new Set(allPaths))}>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={expandir}>
           <Icon name="expand" size={16} />
           Expandir todo
         </button>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={() => setOpen(new Set())}>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={contraer}>
           <Icon name="collapse" size={16} />
           Contraer todo
         </button>
@@ -311,6 +409,31 @@ export function OutlineTab({
         </button>
       </div>
 
+      {vista !== "lista" ? (
+        <p className="flex items-start gap-2 px-1 text-[0.8rem] leading-relaxed" style={{ color: "var(--text-muted)" }}>
+          <Icon name="info" size={16} className="mt-0.5 shrink-0" />
+          <span>Toca un recuadro para abrir o cerrar sus ramas. Usa − y + para el zoom.</span>
+        </p>
+      ) : null}
+
+      {vista !== "lista" ? (
+        <div className="space-y-4">
+          {(porTemas ? tree.nodes : [{ label: tree.title, kind: "chapter", children: tree.nodes }]).map((node, index) => (
+            <TemaDiagrama
+              key={`${vista}-${index}`}
+              node={node}
+              index={index}
+              numerado={porTemas}
+              estilo={vista}
+              orden={orden}
+              onPageClick={onPageClick}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {vista === "lista" ? (
+      <>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 px-1 text-[0.76rem]" style={{ color: "var(--text-muted)" }}>
         <span className="flex items-center gap-1.5">
           <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} /> Concepto
@@ -346,6 +469,8 @@ export function OutlineTab({
           </ul>
         </div>
       )}
+      </>
+      ) : null}
     </div>
   );
 }

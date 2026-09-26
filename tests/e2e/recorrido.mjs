@@ -272,12 +272,59 @@ seccion("4. Documento: resumen, esquema, audio y PDF");
   // Esquema.
   await page.getByRole("tab", { name: /Esquema/ }).click();
   await page.waitForURL(/tab=outline/);
+  // Cuadro (por defecto) y mapa conceptual: dibujados, con ramas que se abren.
+  for (const vista of ["Cuadro", "Mapa conceptual"]) {
+    await page.getByRole("radio", { name: vista }).click();
+    const nodos = page.locator("[data-nodo]");
+    await nodos.first().waitFor({ timeout: 10_000 });
+    await page.waitForTimeout(600);
+    const todos = await nodos.count();
+    comprobar(`«${vista}» dibuja el esquema`, todos > 3, `${todos} recuadros`);
+    const solapes = await page.evaluate(() => {
+      const cajas = [...document.querySelectorAll("[data-diagrama]")].flatMap((d) =>
+        [...d.querySelectorAll("[data-nodo]")].map((n) => ({ d, r: n.getBoundingClientRect() })),
+      );
+      let malos = 0;
+      for (let i = 0; i < cajas.length; i++)
+        for (let j = i + 1; j < cajas.length; j++) {
+          const a = cajas[i];
+          const b = cajas[j];
+          if (a.d !== b.d) continue;
+          if (a.r.left < b.r.right - 1 && b.r.left < a.r.right - 1 && a.r.top < b.r.bottom - 1 && b.r.top < a.r.bottom - 1) malos++;
+        }
+      return malos;
+    });
+    comprobar(`«${vista}»: ningún recuadro pisa a otro`, solapes === 0, `${solapes} solapes`);
+    await page.getByRole("button", { name: /Contraer todo/ }).click();
+    await page.waitForTimeout(400);
+    const contraidos = await nodos.count();
+    await page.getByRole("button", { name: /Expandir todo/ }).click();
+    await page.waitForTimeout(400);
+    comprobar(`«${vista}» se contrae y se expande`, contraidos < todos && (await nodos.count()) === todos, `${todos} → ${contraidos}`);
+    const conRamas = page.locator('[data-nodo][aria-expanded="true"]').nth(1);
+    await conRamas.click();
+    await page.waitForTimeout(300);
+    comprobar(`«${vista}»: tocar un recuadro cierra sus ramas`, (await nodos.count()) < todos);
+    await conRamas.click();
+    await botonesConNombre(page, `esquema ${vista}`);
+  }
+  await page.getByRole("button", { name: "Pantalla completa" }).first().click();
+  const completa = page.getByRole("dialog", { name: /^Esquema/ });
+  await completa.waitFor({ timeout: 5000 });
+  comprobar("el esquema se abre en pantalla completa", await completa.isVisible());
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(300);
+  comprobar("y se cierra con Escape", !(await completa.isVisible().catch(() => false)));
+
+  // Lista.
+  await page.getByRole("radio", { name: "Lista" }).click();
   await page.getByRole("button", { name: /Expandir todo/ }).click();
   const abiertos = await page.locator("main li").count();
   await page.getByRole("button", { name: /Contraer todo/ }).click();
   const cerrados = await page.locator("main li").count();
-  comprobar("el esquema se expande y se contrae", abiertos > cerrados, `${abiertos} → ${cerrados}`);
-  await botonesConNombre(page, "esquema");
+  comprobar("la lista se expande y se contrae", abiertos > cerrados, `${abiertos} → ${cerrados}`);
+  await botonesConNombre(page, "esquema en lista");
+  await page.getByRole("radio", { name: "Cuadro" }).click();
 
   // Audio.
   await page.getByRole("tab", { name: /Audio/ }).click();
