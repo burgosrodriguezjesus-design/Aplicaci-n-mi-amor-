@@ -12,13 +12,18 @@
  * - en las que quedan, se quitan las palabras sueltas por debajo del 45 %
  *   (los puntos de relleno del índice, restos de una mancha...);
  * - las viñetas que el lector confunde con letras ("e", "+", "«") pasan a
- *   ser viñetas de verdad.
+ *   ser viñetas de verdad;
+ * - un trozo de líneas cortas (hasta 4 palabras cada una) en letra claramente
+ *   más pequeña que la del libro es un rótulo de una foto o de un gráfico
+ *   ("OFERTAS", "T1 T2", la leyenda "Ventas / Compras"): fuera. Las notas al
+ *   pie, con líneas largas, se quedan.
  *
  * Código puro: lo usan igual el dispositivo y el servidor.
  */
 
 export type PalabraOcr = { text: string; confidence: number };
-export type LineaOcr = { text?: string; confidence: number; words: PalabraOcr[] };
+export type Caja = { x0: number; y0: number; x1: number; y1: number };
+export type LineaOcr = { text?: string; confidence: number; words: PalabraOcr[]; bbox?: Caja };
 export type ParrafoOcr = { lines: LineaOcr[] };
 export type BloqueOcr = { paragraphs: ParrafoOcr[] };
 
@@ -28,12 +33,32 @@ const PALABRA_MINIMA = 45;
 /** Lo que el lector suele leer donde había un topo o una flecha de lista. */
 const VINETA_LEIDA = /^(?:[+*•·«»°■□▪➢►>~oe]|[-–—])$/;
 
+/** Altura de la letra de una línea (de sus palabras, sin contar los márgenes). */
+function altura(linea: LineaOcr) {
+  return linea.bbox ? linea.bbox.y1 - linea.bbox.y0 : 0;
+}
+
 export function textoDesdeBloques(bloques: BloqueOcr[] | null | undefined): string | null {
   if (!bloques || bloques.length === 0) return null;
   const parrafos: string[] = [];
 
+  // La letra normal del libro: la mediana de las alturas de las líneas largas.
+  const alturas = bloques
+    .flatMap((b) => b.paragraphs ?? [])
+    .flatMap((p) => p.lines ?? [])
+    .filter((l) => (l.words ?? []).length >= 5 && altura(l) > 0)
+    .map(altura)
+    .sort((a, b) => a - b);
+  const normal = alturas.length >= 3 ? alturas[Math.floor(alturas.length / 2)] : 0;
+
   for (const bloque of bloques) {
     for (const parrafo of bloque.paragraphs ?? []) {
+      // Rótulo de foto o de gráfico: poco texto y en letra pequeña.
+      const suyas = parrafo.lines ?? [];
+      const cortas = suyas.every((l) => (l.words ?? []).filter((p) => p.text?.trim()).length <= 4);
+      const mayor = Math.max(0, ...suyas.map(altura));
+      if (normal && mayor > 0 && cortas && mayor < normal * 0.72) continue;
+
       const lineas: string[] = [];
       for (const linea of parrafo.lines ?? []) {
         const palabras = (linea.words ?? []).filter((p) => p.text?.trim());

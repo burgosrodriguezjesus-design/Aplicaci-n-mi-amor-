@@ -83,7 +83,9 @@ export const FIDELITY_RULES = `REGLAS DE FIDELIDAD (obligatorias, sin excepcion)
      > [!practica] Actividades para practicar este apartado (pag. N).
    - PIES DE FOTO, DE FIGURA Y DE GRAFICO, creditos de imagenes, etiquetas de ejes, cabeceras y pies de pagina: se ignoran.
    - NOMBRES QUE NO SON TEMARIO (autores y editorial del libro, fotografos, personas de testimonios o entrevistas, nombres de empresas o personas de los ejemplos, ISBN, derechos de autor): no aparecen en el resumen ni en el esquema.
-   - Si el texto de un escaneo trae palabras sin sentido o letras sueltas, ignoralas: no las copies ni intentes adivinarlas.`;
+   - LO QUE RODEA AL TEMARIO: portada, pagina de creditos, presentacion o prologo del libro, "como usar este libro", ficha del curso o de la asignatura ("Ciclo formativo…", "Modulo…", "Bachillerato…"), y las portadillas de cada unidad ("En esta unidad aprenderas", "Objetivos", "Resultados de aprendizaje", "Criterios de evaluacion", "Situacion de partida"): no se resumen ni aparecen en el esquema.
+   - TEXTO DE FOTOS Y GRAFICOS: rotulos, carteles, etiquetas de ejes y leyendas no son temario.
+   - Si el texto de un escaneo trae palabras sin sentido, letras sueltas o signos sueltos ("==", "= =", "=" al principio o al final de una linea), ignoralos: no los copies ni intentes adivinarlos. Un "=" solo se conserva dentro de una formula de verdad.`;
 
 /** Repaso obligatorio antes de dar una respuesta por buena. */
 export const REVIEW_CHECKLIST = `ANTES DE RESPONDER, REVISA TU PROPIO TEXTO:

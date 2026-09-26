@@ -85,6 +85,15 @@ comprobar("la curiosidad no se mezcla con la teoría", !/Francia|1954/.test(teor
 comprobar("sin testimonios, créditos ni editorial", !/Laura Gómez|Distribuciones Norte|Shutterstock|Javier Martínez|ISBN|Ediciones Didácticas|Ana Pérez|Luis Romero/.test(todo), (todo.match(/.*(?:Laura Gómez|Distribuciones Norte|Shutterstock|Javier Martínez|ISBN|Ediciones Didácticas|Ana Pérez|Luis Romero).*/) ?? [""])[0]);
 comprobar("el esquema es solo temario", !lineasEsquema.some((l) => /Ortega|Lucía|Actividades|ACTIVIDADES|Explica|Calcula el|Clasifica las|Sabías|Francia|Ejemplo/i.test(l)), lineasEsquema.filter((l) => /Ortega|Lucía|Actividades|ACTIVIDADES|Explica|Calcula el|Clasifica las|Sabías|Francia|Ejemplo/i.test(l)).join(" | "));
 comprobar("las actividades no son unidades ni apartados", !/^#{2,4}\s+(?:actividades|ejemplo)/im.test(resumen));
+// Lo que rodea al temario: fuera.
+const rodea = ["Ciclo Formativo", "Grado Medio", "Gestión Administrativa", "Depósito legal", "Reservados", "Impreso en", "Presentación", "Este libro está dirigido", "disfrutes aprendiendo", "En esta unidad aprenderás", "distinguir el IVA repercutido del soportado", "liquidar el impuesto cada trimestre", "Objetivos", "Conocer los tipos impositivos", "OFERTAS", "TEMPORADA", "Repercutido", "Soportado"];
+const colados = rodea.filter((t) => todo.includes(t));
+comprobar("sin portada, créditos, presentación ni objetivos de la unidad", colados.length === 0, colados.join(", "));
+const { sinIgualesSueltos } = await import("../../src/lib/pdf/clasificar");
+const conIgualSuelto = todo.split("\n").filter((l) => l.includes("=") && sinIgualesSueltos(l) !== l.replace(/\s+/g, " ").trim());
+comprobar("sin «=» sueltos", conIgualSuelto.length === 0, conIgualSuelto.slice(0, 3).join(" | "));
+comprobar("la fórmula conserva su «=»", /Punto de pedido = stock de seguridad/.test(todo));
+comprobar("el temario sigue entero", ["Concepto y naturaleza del IVA", "Tipos impositivos", "Liquidación del impuesto", "Las existencias en la empresa", "Clasificación de las existencias", "Métodos de valoración", "El inventario"].every((t) => resumen.includes(t)));
 comprobar("resalta el término definido", /\*\*impuesto sobre el valor añadido \(IVA\)\*\*/i.test(resumen));
 comprobar("los recuadros «Recuerda» destacados", (resumen.match(/\[!recuerda\]/g) ?? []).length >= 2);
 comprobar("glosario en la visión general", /Conceptos imprescindibles[\s\S]*\*\*Existencias:\*\*/i.test(resumen), resumen.slice(0, 600));

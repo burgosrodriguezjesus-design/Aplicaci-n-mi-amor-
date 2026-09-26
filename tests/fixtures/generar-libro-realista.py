@@ -11,6 +11,10 @@ resumen y el esquema en las condiciones reales de un escaneo:
   inventada y su cálculo, un "Por ejemplo, Lucía…", un "¿Sabías que…?", un
   testimonio, el crédito de una foto, actividades numeradas con un test,
   "ACTIVIDADES FINALES" y los datos de autores, editorial e ISBN;
+- lo que rodea al temario: portada con la ficha del curso, página de
+  créditos, «Presentación», portadilla de unidad («En esta unidad
+  aprenderás», «Objetivos»), una raya hecha con «= = =», un cartel dentro de
+  una foto y la leyenda de un gráfico en letra pequeña;
 - defectos del escáner: hoja un poco torcida, desenfoque, grano, fondo gris,
   sombra del lomo y compresión JPEG.
 
@@ -41,9 +45,19 @@ LIBRO = "Proceso integral de la actividad comercial"
 # tabla, grafico, foto, salto, ejemplo (título, texto), cuadro (recuadro
 # gris sin título), actividades (título), pequena (letra pequeña).
 CONTENIDO = [
+    ("portada", None),
+    ("salto", None),
+    ("creditos", None),
+    ("salto", None),
+    ("titulo_pagina", "Presentación"),
+    ("p", "Este libro está dirigido a los alumnos del ciclo formativo de Gestión Administrativa. En cada unidad encontrarás ejemplos resueltos, actividades y un resumen final para repasar lo aprendido."),
+    ("p", "Esperamos que te resulte útil y que disfrutes aprendiendo con él."),
+    ("salto", None),
     ("indice", None),
     ("salto", None),
     ("unidad", "Unidad 4. El IVA en la actividad comercial"),
+    ("objetivos", ["En esta unidad aprenderás:", "a distinguir el IVA repercutido del soportado;", "a liquidar el impuesto cada trimestre."]),
+    ("p", "= = = = = = = = = = = = = = = = = = = = = = = = = ="),
     ("apartado", "1. Concepto y naturaleza del IVA"),
     ("p", "El impuesto sobre el valor añadido (IVA) es un tributo indirecto que grava el consumo de bienes y servicios. Se denomina indirecto porque no tiene en cuenta la capacidad económica de quien lo paga, sino el acto de consumo."),
     ("p", "La empresa actúa como recaudadora: cobra el IVA a sus clientes, paga el IVA a sus proveedores e ingresa en Hacienda la diferencia. Por eso se dice que el IVA es neutral para el empresario, ya que el coste lo soporta el consumidor final."),
@@ -161,6 +175,41 @@ def componer():
                 continue
             pag = paginas[-1]
         d = pag.d
+        if tipo == "portada":
+            y = 420
+            for texto, fuente in [("Proceso integral de la", TITULO), ("actividad comercial", TITULO), ("", CUERPO),
+                                  ("Ciclo Formativo de Grado Medio", APARTADO), ("Gestión Administrativa", APARTADO), ("", CUERPO),
+                                  ("Ana Pérez · Luis Romero", CUERPO), ("", CUERPO), ("Ediciones Didácticas", NEGRITA)]:
+                if texto:
+                    d.text((ANCHO // 2 - fuente.getlength(texto) // 2, y), texto, fill=(25, 25, 35), font=fuente)
+                y += 90
+            continue
+        if tipo == "creditos":
+            y = 1500
+            for texto in ["© Ediciones Didácticas, 2024", "ISBN: 978-84-1234-567-8", "Depósito legal: M-12345-2024",
+                          "Reservados todos los derechos. Queda prohibida la reproducción total o parcial",
+                          "de esta obra sin la autorización escrita de los titulares del copyright.", "Impreso en España"]:
+                d.text((MARGEN, y), texto, fill=(60, 60, 65), font=PEQUENA)
+                y += 44
+            continue
+        if tipo == "titulo_pagina":
+            d.text((MARGEN, pag.y), valor, fill=(20, 20, 25), font=TITULO)
+            pag.y += 120
+            continue
+        if tipo == "objetivos":
+            lineas = valor
+            alto = len(lineas) * 50 + 40
+            d.rectangle((MARGEN, pag.y, ANCHO - MARGEN, pag.y + alto), fill=(240, 236, 250), outline=(150, 130, 200), width=2)
+            for i, linea in enumerate(lineas):
+                d.text((MARGEN + 30, pag.y + 20 + i * 50), ("• " if i else "") + linea, fill=(40, 30, 80), font=NEGRITA if i == 0 else CUERPO)
+            pag.y += alto + 35
+            d.text((MARGEN, pag.y), "Objetivos", fill=(40, 30, 80), font=SUBAPARTADO)
+            pag.y += 60
+            for linea in ["Conocer los tipos impositivos del IVA.", "Calcular la cuota a ingresar."]:
+                d.text((MARGEN + 30, pag.y), "• " + linea, fill=(40, 30, 80), font=CUERPO)
+                pag.y += 50
+            pag.y += 30
+            continue
         if tipo == "indice":
             d.text((MARGEN, pag.y), "Índice", fill=(20, 20, 25), font=TITULO)
             pag.y += 110
@@ -261,6 +310,12 @@ def componer():
                 d.rectangle((bx, y0 + alto - a, bx + 70, y0 + alto), fill=(90, 110, 170))
                 d.rectangle((bx + 80, y0 + alto - b, bx + 150, y0 + alto), fill=(190, 120, 80))
                 d.text((bx + 20, y0 + alto + 10), f"T{t + 1}", fill=(40, 40, 40), font=PEQUENA)
+            # Leyenda del gráfico, en letra pequeña.
+            leyenda = ImageFont.truetype(f"{FUENTES}/LiberationSans-Regular.ttf", 20)
+            d.rectangle((x0 + 760, y0 + 10, x0 + 780, y0 + 30), fill=(90, 110, 170))
+            d.text((x0 + 790, y0 + 8), "Repercutido", fill=(40, 40, 40), font=leyenda)
+            d.rectangle((x0 + 760, y0 + 45, x0 + 780, y0 + 65), fill=(190, 120, 80))
+            d.text((x0 + 790, y0 + 43), "Soportado", fill=(40, 40, 40), font=leyenda)
             pag.y += alto + 60
             d.text((MARGEN, pag.y), valor, fill=(70, 70, 75), font=PEQUENA)
             pag.y += 70
@@ -271,6 +326,9 @@ def componer():
                 pag, d = paginas[-1], paginas[-1].d
             foto = Image.effect_noise((util, alto), 70).convert("RGB").filter(ImageFilter.GaussianBlur(2))
             pag.img.paste(foto, (MARGEN, pag.y))
+            # Un cartel dentro de la foto, en letra pequeña.
+            d.rectangle((MARGEN + 520, pag.y + 150, MARGEN + 800, pag.y + 210), fill=(245, 245, 240))
+            d.text((MARGEN + 545, pag.y + 163), "OFERTAS DE TEMPORADA", fill=(20, 20, 20), font=ImageFont.truetype(f"{FUENTES}/LiberationSans-Bold.ttf", 20))
             pag.y += alto + 20
             d.text((MARGEN, pag.y), valor, fill=(70, 70, 75), font=PEQUENA)
             pag.y += 70

@@ -37,6 +37,7 @@ import {
   esFraseDeEjemplo,
   esTestimonio,
   esTituloDePractica,
+  esTituloFueraDeTemario,
   sinMarcaDeCuriosidad,
   sinMarcaDeEjemplo,
 } from "../pdf/clasificar";
@@ -213,7 +214,7 @@ type Bloque =
   /** Actividades, ejercicios o un test: no se resumen, se señalan. */
   | { tipo: "practica"; enunciados: number; pagina: number }
   /** Marca suelta ("Actividades", "Ejemplo 4.1") para lo que viene después. */
-  | { tipo: "marca"; clase: "practica" | "ejemplo" | "curiosidad"; pagina: number };
+  | { tipo: "marca"; clase: "practica" | "ejemplo" | "curiosidad" | "fuera"; pagina: number };
 
 /**
  * "Importante:", "Atención:", "Ojo:" avisan de algo que no hay que pasar por
@@ -293,6 +294,15 @@ function leerBloques(contenido: string, paginaInicial: number): Bloque[] {
     // Créditos de fotos, editorial, enlaces: fuera.
     if (esCredito(linea)) continue;
 
+    // "Objetivos", "En esta unidad aprenderás"…: no es temario hasta el
+    // siguiente apartado.
+    if (esTituloFueraDeTemario(linea)) {
+      cerrarParrafo();
+      cerrarLista();
+      bloques.push({ tipo: "marca", clase: "fuera", pagina });
+      continue;
+    }
+
     // "Actividades", "Ejemplo 4.1", "¿Sabías que…?": marcan lo que viene.
     if (esTituloDePractica(linea)) {
       cerrarParrafo();
@@ -357,6 +367,7 @@ function leerBloques(contenido: string, paginaInicial: number): Bloque[] {
   const salida: Bloque[] = [];
   let practica: { enunciados: number; pagina: number } | null = null;
   let pendiente: "ejemplo" | "curiosidad" | null = null;
+  let fuera = false;
   const cerrarPractica = () => {
     if (practica) salida.push({ tipo: "practica", ...practica });
     practica = null;
@@ -366,6 +377,12 @@ function leerBloques(contenido: string, paginaInicial: number): Bloque[] {
     const bloque = bloques[i];
 
     if (bloque.tipo === "marca") {
+      if (bloque.clase === "fuera") {
+        cerrarPractica();
+        fuera = true;
+        pendiente = null;
+        continue;
+      }
       if (bloque.clase === "practica") {
         practica = practica ?? { enunciados: 0, pagina: bloque.pagina };
         pendiente = null;
@@ -373,6 +390,12 @@ function leerBloques(contenido: string, paginaInicial: number): Bloque[] {
       continue;
     }
     if (bloque.tipo === "titulo") {
+      if (esTituloFueraDeTemario(bloque.texto)) {
+        cerrarPractica();
+        fuera = true;
+        continue;
+      }
+      fuera = false;
       if (esTituloDePractica(bloque.texto)) {
         practica = practica ?? { enunciados: 0, pagina: bloque.pagina };
         continue;
@@ -381,6 +404,13 @@ function leerBloques(contenido: string, paginaInicial: number): Bloque[] {
       pendiente = null;
       salida.push(bloque);
       continue;
+    }
+
+    // Presentación de la unidad (objetivos, "en esta unidad…"): fuera hasta
+    // el siguiente título, o hasta que vuelva un párrafo de teoría de verdad.
+    if (fuera) {
+      if (bloque.tipo === "parrafo" && pareceTeoria(bloque.texto)) fuera = false;
+      else continue;
     }
 
     // Zona de actividades: hasta el siguiente título (o hasta que vuelva la teoría).

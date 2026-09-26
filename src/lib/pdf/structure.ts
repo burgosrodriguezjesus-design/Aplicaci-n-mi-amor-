@@ -10,7 +10,16 @@
 import "server-only";
 import type { PageLine } from "./extract";
 import { normalize, type StructureContext } from "./toc";
-import { empiezaCuriosidad, empiezaEjemplo, esCredito, esEnunciadoNumerado, esTituloDePractica } from "./clasificar";
+import {
+  empiezaCuriosidad,
+  empiezaEjemplo,
+  esCredito,
+  esEnunciadoNumerado,
+  esPaginaPreliminar,
+  esTituloDePractica,
+  esTituloFueraDeTemario,
+  sinIgualesSueltos,
+} from "./clasificar";
 
 export type PageText = { pageNumber: number; text: string; lines?: PageLine[] };
 
@@ -218,9 +227,24 @@ export function tagLines(pages: PageText[], context?: StructureContext): TaggedL
     return fits;
   };
 
-  for (const page of pages) {
+  // Lo de antes del primer tema (portada, créditos, presentación, ficha del
+  // curso…) no es temario. Solo si el primer tema llega pronto: si no, el
+  // documento no se organiza por temas y no se tira nada por esta regla.
+  const esIndice = (page: PageText) => tocPages.has(page.pageNumber) || pareceIndice(page.text);
+  const primerTema = pages.findIndex(
+    (page) =>
+      !esIndice(page) &&
+      page.text.split("\n").some((l) => {
+        const t = l.trim();
+        return CHAPTER_RE.test(t) && t.length <= 120 && !/[.;,]$/.test(t);
+      }),
+  );
+  const saltarHasta = primerTema > 0 && primerTema <= Math.max(20, pages.length * 0.3) ? primerTema : 0;
+
+  for (const [indice, page] of pages.entries()) {
     // El indice no es contenido: si se trocea, se resume su propia lista.
-    if (tocPages.has(page.pageNumber) || pareceIndice(page.text)) continue;
+    if (esIndice(page)) continue;
+    if (indice < saltarHasta || esPaginaPreliminar(page.text, { indice, total: pages.length })) continue;
 
     const lines: PageLine[] =
       page.lines && page.lines.length > 0
@@ -228,7 +252,8 @@ export function tagLines(pages: PageText[], context?: StructureContext): TaggedL
         : page.text.split("\n").map((text) => ({ text, height: 0, x: 0 }));
 
     for (const raw of lines) {
-      const line = (raw.text ?? "").trim();
+      // "==", "= =" y demás restos de rayas y tablas fuera; las fórmulas no.
+      const line = sinIgualesSueltos((raw.text ?? "").trim());
       const height = raw.height || 0;
       if (isNoise(line)) {
         if (line === "") out.push({ text: "", pageNumber: page.pageNumber, heading: null });
@@ -247,7 +272,11 @@ export function tagLines(pages: PageText[], context?: StructureContext): TaggedL
       // "Actividades", "Ejemplo 4.1", "3. Calcula…" nunca son un apartado del
       // temario, aunque vayan en grande o aparezcan en el índice.
       const noEsTemario =
-        esTituloDePractica(line) || empiezaEjemplo(line) || empiezaCuriosidad(line) || esEnunciadoNumerado(line);
+        esTituloDePractica(line) ||
+        esTituloFueraDeTemario(line) ||
+        empiezaEjemplo(line) ||
+        empiezaCuriosidad(line) ||
+        esEnunciadoNumerado(line);
 
       if (noEsTemario) {
         heading = null;

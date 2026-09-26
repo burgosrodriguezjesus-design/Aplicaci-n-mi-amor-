@@ -467,6 +467,17 @@ seccion("9. Libro escaneado de principio a fin");
   comprobar("los ejemplos salen marcados aparte", /EJEMPLO · NO ES TEORÍA/i.test(texto));
   comprobar("las actividades se señalan", /PARA PRACTICAR/i.test(texto));
   comprobar("sin créditos ni editorial", !/Shutterstock|ISBN|Ediciones Didácticas/.test(texto));
+  comprobar(
+    "sin portada, presentación ni objetivos de la unidad",
+    !/Ciclo Formativo|Grado Medio|Depósito legal|Este libro está dirigido|En esta unidad aprenderás|Objetivos|OFERTAS|= =/.test(texto),
+  );
+  await page.getByRole("tab", { name: /Esquema/ }).click();
+  await page.locator("[data-nodo]").first().waitFor({ timeout: 10_000 });
+  const esquema = await page.locator("main").innerText();
+  comprobar(
+    "el esquema es solo temario",
+    !/Ciclo Formativo|Presentación|Objetivos|En esta unidad|OFERTAS|Actividades|Muebles Ortega/.test(esquema),
+  );
 }
 
 /* ── 10. Borrar y salir ────────────────────────────────────────── */

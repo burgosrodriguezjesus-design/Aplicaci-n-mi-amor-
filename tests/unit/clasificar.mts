@@ -85,5 +85,34 @@ comprobar(
 comprobar("«¿Sabías que…?» es una curiosidad", c.empiezaCuriosidad("¿Sabías que el IVA nació en Francia?"));
 comprobar("la curiosidad queda como frase", c.sinMarcaDeCuriosidad("¿Sabías que el IVA nació en Francia?") === "el IVA nació en Francia.");
 
+console.log("\nLo que rodea al temario");
+const pagina = (lineas: string[]) => lineas.join("\n");
+const temario = pagina([
+  "2. Tipos impositivos",
+  "La Ley del IVA establece tres tipos impositivos que se aplican sobre la base imponible según la naturaleza del bien o del servicio.",
+  "El tipo general del 21 % se aplica a la mayoría de los bienes y servicios; el reducido del 10 %, a la hostelería y el transporte;",
+  "y el superreducido del 4 %, al pan, la leche, los libros y los medicamentos. La base imponible incluye los gastos de transporte.",
+  "Autores: Ana Pérez y Luis Romero. © Ediciones Didácticas, 2024. ISBN 978-84-1234-567-8.",
+]);
+comprobar("una página de temario con el ISBN al pie sigue siendo temario", !c.esPaginaPreliminar(temario, { indice: 8, total: 9 }));
+comprobar("la página de créditos no es temario", c.esPaginaPreliminar(pagina(["© Ediciones Didácticas, 2024", "ISBN: 978-84-1234-567-8", "Depósito legal: M-12345-2024", "Reservados todos los derechos."]), { indice: 1, total: 200 }));
+comprobar("la portada con la ficha del curso no es temario", c.esPaginaPreliminar(pagina(["Proceso integral de la actividad comercial", "Ciclo Formativo de Grado Medio", "Gestión Administrativa", "Ediciones Didácticas"]), { indice: 0, total: 200 }));
+comprobar("la presentación del libro no es temario", c.esPaginaPreliminar(pagina(["Presentación", "Este libro está dirigido a los alumnos del ciclo formativo."]), { indice: 2, total: 200 }));
+comprobar("una página corta de temario a mitad del libro sí es temario", !c.esPaginaPreliminar(pagina(["4. El inventario", "El inventario es la relación valorada de las existencias."]), { indice: 90, total: 200 }));
+for (const t of ["En esta unidad aprenderás:", "Objetivos", "¿Qué vas a aprender?", "Criterios de evaluación", "Resultados de aprendizaje", "Situación de partida", "Presentación", "Bibliografía"]) {
+  comprobar(`«${t}» no es temario`, c.esTituloFueraDeTemario(t));
+}
+for (const t of ["Introducción", "1. Introducción al IVA", "Objetivos de la empresa y su planificación estratégica", "Contenido del contrato de compraventa"]) {
+  comprobar(`«${t}» sí es temario`, !c.esTituloFueraDeTemario(t));
+}
+for (const [antes, despues] of [
+  ["== ==", ""],
+  ["= Mercaderías", "Mercaderías"],
+  ["Las existencias =", "Las existencias"],
+  ["Punto de pedido = stock de seguridad + consumo", "Punto de pedido = stock de seguridad + consumo"],
+  ["V = I · R", "V = I · R"],
+  ["500 × 21 % = 105 €", "500 × 21 % = 105 €"],
+]) comprobar(`«${antes}» → «${despues}»`, c.sinIgualesSueltos(antes) === despues, c.sinIgualesSueltos(antes));
+
 console.log(fallos ? `\n${fallos} fallos` : "\nSe distingue bien el temario de lo que no lo es");
 process.exit(fallos ? 1 : 0);

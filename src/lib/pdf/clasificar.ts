@@ -178,3 +178,108 @@ export function esCalculoConCifras(texto: string) {
   const izquierda = t.split("=")[0] ?? "";
   return /\d/.test(izquierda) && !/\p{L}{3,}/u.test(izquierda);
 }
+
+/* ── Lo que rodea al temario: portada, créditos, presentación… ─────── */
+
+/**
+ * Títulos de lo que no es temario aunque esté en el libro: la presentación
+ * del libro y las portadillas de cada unidad ("En esta unidad aprenderás",
+ * "Objetivos", "Criterios de evaluación"…), la bibliografía, etc.
+ */
+const FUERA_TITULO_RE = new RegExp(
+  "^(?:" +
+    [
+      "presentaci[oó]n(?:\\s+del\\s+libro)?",
+      "pr[oó]logo",
+      "pre[aá]mbulo",
+      "introducci[oó]n\\s+al\\s+libro",
+      "a\\s+los?\\s+(?:alumnos?|alumnas?|estudiantes|profesores?|lectores?)",
+      "al\\s+(?:alumno|alumnado|lector|profesorado)",
+      "c[oó]mo\\s+(?:usar|utilizar|es|se\\s+organiza|trabajar\\s+con)\\s+(?:este|el)\\s+libro",
+      "estructura\\s+(?:del|de\\s+este)\\s+libro",
+      "gu[ií]a\\s+de\\s+uso",
+      "agradecimientos?",
+      "dedicatoria",
+      "cr[eé]ditos",
+      "bibliograf[ií]a",
+      "webgraf[ií]a",
+      "referencias\\s+bibliogr[aá]ficas",
+      "en\\s+esta\\s+unidad(?:\\s+(?:aprender[aá]s|vas\\s+a\\s+aprender|estudiar[aá]s|conocer[aá]s))?",
+      "(?:qu[eé]\\s+)?vas\\s+a\\s+aprender",
+      "qu[eé]\\s+aprender[aá]s",
+      "objetivos?(?:\\s+de\\s+(?:la\\s+unidad|aprendizaje|este\\s+tema))?",
+      "resultados?\\s+de\\s+aprendizaje",
+      "criterios?\\s+de\\s+evaluaci[oó]n",
+      "competencias?(?:\\s+(?:clave|profesionales|personales\\s+y\\s+sociales))?",
+      "contenidos?(?:\\s+de\\s+la\\s+unidad)?",
+      "situaci[oó]n\\s+de\\s+partida",
+      "antes\\s+de\\s+empezar",
+      "para\\s+empezar",
+      "qu[eé]\\s+sabes\\s+de[^.]*",
+      "mapa\\s+conceptual(?:\\s+de\\s+la\\s+unidad)?",
+    ].join("|") +
+    ")\\s*[.:?]?$",
+  "i",
+);
+
+/** "Presentación", "Objetivos", "En esta unidad aprenderás"… */
+export function esTituloFueraDeTemario(linea: string) {
+  const t = limpiar(linea).replace(/^#+\s*/, "").replace(/^[¿¡]/, "");
+  return t.length <= 70 && FUERA_TITULO_RE.test(t);
+}
+
+/** Datos de la edición: con uno de estos, la página es la de créditos. */
+const EDICION_FUERTE_RE =
+  /\bisbn\b|dep[oó]sito\s+legal|reservados\s+todos\s+los\s+derechos|todos\s+los\s+derechos\s+reservados|queda\s+(?:rigurosamente\s+)?prohibida|\bcedro\b/gi;
+const EDICION_RE = /©|\bimpreso\s+en\b|\b(?:primera|segunda|\d+\.?[ªa])\s+edici[oó]n\b|\beditorial\b|\bediciones\b/gi;
+/** Lo que pone en una portada: el curso, la asignatura, la editorial. */
+const PORTADA_RE =
+  /\b(?:ciclos?\s+formativos?|grado\s+(?:medio|superior|b[aá]sico)|formaci[oó]n\s+profesional|bachillerato|educaci[oó]n\s+secundaria|m[oó]dulo\s+profesional|asignatura|\d\.?[ºo]\s+curso|curso\s+\d|editorial|ediciones|autor(?:es|a|as)?|coordinador(?:es|a)?|materia)\b/i;
+
+/**
+ * ¿Es esta página parte de lo que rodea al temario? La de créditos o la
+ * portada (solo al principio o al final del libro), o una que empieza por
+ * "Presentación", "Prólogo", "A los alumnos", "Bibliografía"…
+ */
+export function esPaginaPreliminar(texto: string, posicion?: { indice: number; total: number }) {
+  const lineas = texto.split("\n").map((l) => limpiar(l)).filter(Boolean);
+  if (!lineas.length) return false;
+  const primera = lineas.slice(0, 4).find((l) => esTituloFueraDeTemario(l));
+  if (primera && /^(presentaci|pr[oó]logo|pre[aá]mbulo|introducci[oó]n\s+al|a\s+l|al\s|c[oó]mo\s|estructura|gu[ií]a|agradec|dedicat|cr[eé]dit|bibliograf|webgraf|referencias)/i.test(primera)) {
+    return true;
+  }
+  const extremo = !posicion || posicion.indice < Math.max(5, posicion.total * 0.15) || posicion.indice >= posicion.total - 3;
+  if (!extremo) return false;
+  const palabras = texto.split(/\s+/).filter((p) => /\p{L}{2,}/u.test(p)).length;
+  const fuertes = (texto.match(EDICION_FUERTE_RE) ?? []).length;
+  const debiles = (texto.match(EDICION_RE) ?? []).length;
+  // Créditos: quitando las líneas de la edición, apenas queda texto. Una
+  // página de temario con el ISBN al pie sigue siendo temario.
+  const resto = lineas
+    .filter((l) => !esCredito(l) && !new RegExp(EDICION_FUERTE_RE.source, "i").test(l) && !new RegExp(EDICION_RE.source, "i").test(l))
+    .join(" ")
+    .split(/\s+/)
+    .filter((p) => /\p{L}{2,}/u.test(p)).length;
+  if ((fuertes >= 1 || fuertes + debiles >= 3) && resto < 40) return true;
+  // Portada: poco texto y habla del curso, la asignatura o la editorial.
+  return palabras <= 60 && PORTADA_RE.test(texto);
+}
+
+/**
+ * Los "=" sueltos que deja el lector al leer rayas, tablas o dibujos
+ * ("==", "= =", "«=", "texto =", "= texto"). En una fórmula de verdad
+ * ("Punto de pedido = stock + …") se quedan.
+ */
+export function sinIgualesSueltos(linea: string) {
+  let t = linea.replace(/={2,}/g, " ");
+  // Un "=" vale si a los dos lados, saltando espacios, hay letra, cifra,
+  // paréntesis o símbolo de unidad: "V = I · R", "x = 2", "(a + b) = c".
+  t = t.replace(/=/g, (_signo, pos: number, todo: string) => {
+    const antes = todo.slice(0, pos).trimEnd().slice(-1);
+    const despues = todo.slice(pos + 1).trimStart().charAt(0);
+    const vale = (c: string) => /[\p{L}\p{N})\]%€²³°]/u.test(c);
+    const valeDespues = (c: string) => /[\p{L}\p{N}(\[−\-+√]/u.test(c);
+    return antes && despues && vale(antes) && valeDespues(despues) ? "=" : " ";
+  });
+  return t.replace(/\s{2,}/g, " ").trim();
+}
