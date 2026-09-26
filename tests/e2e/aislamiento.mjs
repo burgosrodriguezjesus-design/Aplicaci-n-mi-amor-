@@ -99,6 +99,8 @@ for (const [quien, call] of [["Bea (otra cuenta)", bea], ["sin sesión", anonimo
     ["regenerarlo", `/api/documents/${docId}/regenerate`, { method: "POST", json: { target: "summary" } }],
     ["regenerar un apartado", `/api/documents/${docId}/regenerate`, { method: "POST", json: { target: "section", sectionId: seccionId } }],
     ["releerlo", `/api/documents/${docId}/releer`, { method: "POST", json: {} }],
+    ["ver su examen", `/api/documents/${docId}/exam`, {}],
+    ["crearle un examen", `/api/documents/${docId}/exam`, { method: "POST" }],
     ["mandarle páginas", `/api/documents/${docId}/paginas`, { method: "POST", json: { paginas: [{ numero: 1, texto: "x" }] } }],
     ["pedirle OCR", `/api/documents/${docId}/ocr`, { method: "POST", json: {} }],
     ["prepararle audio", `/api/documents/${docId}/tracks`, { method: "POST", json: { source: "DOCUMENT" } }],

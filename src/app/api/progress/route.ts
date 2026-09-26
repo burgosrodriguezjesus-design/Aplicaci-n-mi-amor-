@@ -13,7 +13,7 @@ const schema = z.object({
   listenSeconds: z.number().int().min(0).max(3600).optional(),
   completedSectionId: z.string().optional(),
   uncompletedSectionId: z.string().optional(),
-  lastTab: z.enum(["pdf", "summary", "outline", "audio"]).optional(),
+  lastTab: z.enum(["pdf", "summary", "outline", "exam", "audio"]).optional(),
   lastTrackId: z.string().nullable().optional(),
   lastPositionSeconds: z.number().min(0).optional(),
 });

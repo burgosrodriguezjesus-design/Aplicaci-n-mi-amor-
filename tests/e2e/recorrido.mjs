@@ -328,6 +328,50 @@ seccion("4. Documento: resumen, esquema, audio y PDF");
   await botonesConNombre(page, "esquema en lista");
   await page.getByRole("radio", { name: "Cuadro" }).click();
 
+  // Examen: preguntas sin soluciones al lado; soluciones aparte y ocultas.
+  await page.getByRole("tab", { name: /Examen/ }).click();
+  await page.waitForURL(/tab=exam/);
+  await page.getByRole("button", { name: "Crear examen" }).click();
+  await page.locator("[data-pregunta]").first().waitFor({ timeout: 90_000 });
+  const preguntas = await page.locator("[data-pregunta]").count();
+  comprobar("el examen se crea con sus preguntas", preguntas >= 15, `${preguntas} preguntas`);
+  comprobar("hay preguntas tipo test con 4 opciones", (await page.locator("[data-pregunta]").first().getByRole("radio").count()) === 4);
+  comprobar(
+    "las preguntas se clasifican por dificultad",
+    (await page.locator("[data-pregunta]").getByText(/^(Fácil|Media|Difícil)$/).count()) === preguntas,
+  );
+  comprobar(
+    "las soluciones NO se ven junto a las preguntas",
+    (await page.locator("[data-solucion]").count()) === 0 && (await page.locator("[data-pregunta]").getByText(/Respuesta correcta|Explicación/).count()) === 0,
+  );
+  await page.locator("[data-pregunta]").first().getByRole("radio").first().click();
+  comprobar(
+    "se puede marcar una respuesta",
+    (await page.locator("[data-pregunta]").first().getByRole("radio").first().getAttribute("aria-checked")) === "true",
+  );
+  await page.getByRole("radio", { name: /^Difícil/ }).click();
+  const dificiles = await page.locator("[data-pregunta]").count();
+  comprobar("se filtra por dificultad", dificiles > 0 && dificiles < preguntas, `${dificiles} de ${preguntas}`);
+  await page.getByRole("radio", { name: /^Todas/ }).click();
+  await page.getByRole("button", { name: "Ver soluciones" }).click();
+  const soluciones = await page.locator("[data-solucion]").count();
+  comprobar("la sección SOLUCIONES tiene todas las respuestas", soluciones === preguntas, `${soluciones} de ${preguntas}`);
+  const solucion1 = page.locator("[data-solucion]").first();
+  comprobar(
+    "cada solución: respuesta, explicación y parte del PDF",
+    (await solucion1.getByText(/Respuesta correcta/).count()) > 0 && (await solucion1.getByText(/Explicación/).count()) > 0 && (await solucion1.locator("blockquote").count()) > 0,
+  );
+  comprobar("corrige lo que has marcado", (await page.getByText(/^Test: \d+ de 1 acierto/).count()) === 1);
+  await sinDesborde(page, "examen");
+  await page.getByRole("button", { name: /Crear otro examen/ }).click();
+  await page.getByText(/Nuevo examen listo/).waitFor({ timeout: 90_000 });
+  comprobar("«Crear otro examen» prepara uno nuevo", (await page.getByRole("button", { name: "Ver soluciones" }).count()) === 1 && (await page.locator("[data-pregunta]").count()) >= 15);
+  const descargaExamen = page.waitForEvent("download", { timeout: 10_000 }).catch(() => null);
+  await page.getByRole("button", { name: /Descargar/ }).click();
+  const archivo = await descargaExamen;
+  comprobar("se puede descargar el examen", Boolean(archivo) && /examen\.md$/.test(archivo?.suggestedFilename() ?? ""), archivo?.suggestedFilename());
+  await botonesConNombre(page, "examen");
+
   // Audio.
   await page.getByRole("tab", { name: /Audio/ }).click();
   await page.waitForURL(/tab=audio/);
@@ -474,7 +518,7 @@ seccion("7. Ajustes");
 seccion("8. Todas las pantallas en móvil pequeño, móvil, tableta y ordenador, en claro y oscuro");
 {
   const estado = await contexto.storageState();
-  const rutas = ["/inicio", "/biblioteca", "/subir", "/ajustes", `/documento/${docId}?tab=summary`, `/documento/${docId}?tab=outline`, `/documento/${docId}?tab=audio`, `/documento/${docId}?tab=pdf`];
+  const rutas = ["/inicio", "/biblioteca", "/subir", "/ajustes", `/documento/${docId}?tab=summary`, `/documento/${docId}?tab=outline`, `/documento/${docId}?tab=exam`, `/documento/${docId}?tab=audio`, `/documento/${docId}?tab=pdf`];
   for (const [nombre, ancho, alto] of [["320", 320, 640], ["390", 390, 844], ["768", 768, 1024], ["1440", 1440, 900]]) {
     for (const esquema of ["light", "dark"]) {
       const v = await nuevaPagina({ viewport: { width: ancho, height: alto }, isMobile: ancho < 700, colorScheme: esquema, storageState: estado });

@@ -1,0 +1,71 @@
+[
+ {
+  "titulo": "Visión general",
+  "markdown": "## Visión general\n\nResumen de **apuntes** (3 páginas): 2 unidades y 4 apartados.\n\n### Qué vas a estudiar\n\n- **TEMA 1 - FUNDAMENTOS DE INSTALACIONES ELECTRICAS**: conceptos fundamentales; potencia electrica.\n- **TEMA 2 - PROTECCIONES Y CONDUCTORES**: elementos de proteccion; seccion de los conductores.\n\n### Conceptos imprescindibles\n\n- **Intensidad:** la cantidad de carga electrica que atraviesa la seccion de un conductor por unidad de tiempo.\n- **Potencia electrica:** la energia consumida por unidad de tiempo.\n- **Su unidad:** el vatio (W)\n- **Dispositivos principales:** el interruptor automatico magnetotermico, el interruptor diferencial y el limitador de sobretension.\n- **Curvas mas usadas:** B, C y D.\n- **Caida de tension maxima admitida:** del 3% en alumbrado y del 5% en fuerza para instalaciones interiores.\n\n### Fórmulas\n\n- En corriente continua se calcula como P = V × I\n- En trifasica: P = raiz de 3 × V × I × cos(fi)",
+  "paginas": []
+ },
+ {
+  "titulo": "TEMA 1 - FUNDAMENTOS DE INSTALACIONES ELECTRICAS",
+  "markdown": "## TEMA 1 - FUNDAMENTOS DE INSTALACIONES ELECTRICAS\n\n- Este tema recoge los conceptos basicos necesarios para comprender el funcionamiento de cualquier instalacion electrica de baja tension.\n- Se estudian las magnitudes fundamentales, las leyes que las relacionan y los elementos de proteccion mas habituales.",
+  "paginas": [
+   1
+  ]
+ },
+ {
+  "titulo": "1.1 Tension electrica",
+  "markdown": "### 1. Conceptos fundamentales\n\n#### 1.1 Tension electrica\n\n- La tension electrica, tambien llamada diferencia de potencial, es el trabajo necesario para desplazar una carga electrica entre dos puntos de un circuito.\n- Se representa con la letra V y su unidad en el Sistema Internacional es el voltio (V).\n- Definicion: la tension entre dos puntos A y B es el trabajo por unidad de carga que realiza el campo electrico para trasladar una carga desde A hasta B.\n- Valores habituales en Espana: 230 V entre fase y neutro, y 400 V entre fases en sistemas trifasicos.",
+  "paginas": [
+   1
+  ]
+ },
+ {
+  "titulo": "1.2 Intensidad de corriente",
+  "markdown": "#### 1.2 Intensidad de corriente\n\n- La **intensidad** es la cantidad de carga electrica que atraviesa la seccion de un conductor por unidad de tiempo.\n- Se representa con la letra I y su unidad es el amperio (A).\n- I = Q / t, donde Q es la carga en culombios y t el tiempo en segundos.",
+  "paginas": [
+   1
+  ]
+ },
+ {
+  "titulo": "1.3 Resistencia electrica",
+  "markdown": "#### 1.3 Resistencia electrica\n\n- Se representa con R y su unidad es el ohmio.\n- Depende de la resistividad del material, de la longitud del conductor y de su seccion: R = rho * L / S.\n\n- La ley de Ohm establece que la tension aplicada a un conductor es directamente proporcional a la intensidad que circula por el y a su resistencia.\n- V = I x R De esta expresion se deducen: I = V / R y R = V / I.\n- Es la relacion mas utilizada en el calculo de circuitos de corriente continua.\n\n> [!ejemplo] Si aplicamos 230 V a una resistencia de 46 ohmios, la intensidad sera de 5 A.",
+  "paginas": [
+   1,
+   2
+  ]
+ },
+ {
+  "titulo": "3. Potencia electrica",
+  "markdown": "### 3. Potencia electrica\n\n- La **potencia electrica** es la energia consumida por unidad de tiempo.\n- **Su unidad** es el vatio (W).\n- En corriente continua se calcula como P = V x I.\n- En corriente alterna monofasica se introduce el factor de potencia: P = V x I x cos(fi).\n- En trifasica: P = raiz de 3 x V x I x cos(fi).\n- IMPORTANTE PARA EL EXAMEN: no confundir potencia activa (W), potencia reactiva (VAr) y potencia aparente (VA).",
+  "paginas": [
+   2
+  ]
+ },
+ {
+  "titulo": "1. Elementos de proteccion",
+  "markdown": "## TEMA 2 - PROTECCIONES Y CONDUCTORES\n\n### 1. Elementos de proteccion\n\n- Toda instalacion debe proteger frente a sobrecargas, cortocircuitos y contactos indirectos.\n- Los **dispositivos principales** son el interruptor automatico magnetotermico, el interruptor diferencial y el limitador de sobretension.",
+  "paginas": [
+   3
+  ]
+ },
+ {
+  "titulo": "1.1 Interruptor magnetotermico",
+  "markdown": "#### 1.1 Interruptor magnetotermico\n\n- Protege el circuito frente a sobrecargas mediante un elemento termico bimetalico y frente a cortocircuitos mediante un elemento magnetico.\n- Las **curvas mas usadas** son B, C y D.",
+  "paginas": [
+   3
+  ]
+ },
+ {
+  "titulo": "1.2 Interruptor diferencial",
+  "markdown": "#### 1.2 Interruptor diferencial\n\n- Detecta fugas de corriente a tierra comparando la corriente de entrada y la de salida.\n- Sensibilidad habitual: 30 mA en viviendas y 300 mA en proteccion contra incendios.",
+  "paginas": [
+   3
+  ]
+ },
+ {
+  "titulo": "2. Seccion de los conductores",
+  "markdown": "### 2. Seccion de los conductores\n\n- La **caida de tension maxima admitida** es del 3% en alumbrado y del 5% en fuerza para instalaciones interiores.\n- Formula de caida de tension en monofasica: e = 2 x L x I x cos(fi) / (gamma x S).\n- Los colores normalizados son: marron o negro o gris para fases, azul para el neutro y amarillo-verde para el conductor de proteccion.",
+  "paginas": [
+   3
+  ]
+ }
+]

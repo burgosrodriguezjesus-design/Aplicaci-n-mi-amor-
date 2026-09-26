@@ -144,6 +144,7 @@ model Document {
   sections    DocumentSection[]
   summaries   Summary[]
   outlines    Outline[]
+  exams       Exam[]
   audioTracks AudioTrack[]
   jobs        ProcessingJob[]
   progressRows StudyProgress[]
@@ -247,6 +248,22 @@ model Outline {
   version    Int     @default(1)
   isCurrent  Boolean @default(true)
   instructions String?
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, isCurrent])
+}
+
+/// Examen del documento (JSON con preguntas y soluciones). Se versiona:
+/// "Crear otro examen" genera uno nuevo y el anterior deja de ser el actual.
+model Exam {
+  id         String   @id @default(cuid())
+  documentId String
+  content    String
+  provider   String
+  version    Int      @default(1)
+  isCurrent  Boolean  @default(true)
   createdAt  DateTime @default(now())
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)

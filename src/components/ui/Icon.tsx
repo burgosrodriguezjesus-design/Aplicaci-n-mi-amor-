@@ -20,11 +20,14 @@ import {
   ChevronRight,
   ChevronUp,
   CircleCheckBig,
+  CircleX,
+  ClipboardCheck,
   Clock,
   CloudUpload,
   Download,
   EllipsisVertical,
   Eye,
+  EyeOff,
   FileText,
   Flame,
   Folder,
@@ -50,6 +53,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Printer,
   Quote,
   RefreshCw,
   RotateCcw,
@@ -159,6 +163,10 @@ const ICONS: Record<string, LucideIcon> = {
   zoomIn: ZoomIn,
   zoomOut: ZoomOut,
   fullscreen: Maximize,
+  exam: ClipboardCheck,
+  printer: Printer,
+  eyeOff: EyeOff,
+  xCircle: CircleX,
 };
 
 export function Icon({

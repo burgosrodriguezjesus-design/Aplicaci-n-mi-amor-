@@ -15,13 +15,15 @@ import { SummaryTab } from "./SummaryTab";
 import { OutlineTab } from "./OutlineTab";
 import { AudioTab } from "./AudioTab";
 import { PdfTab } from "./PdfTab";
+import { ExamTab } from "./ExamTab";
 import { RegenerateDialog } from "./RegenerateDialog";
 
-type Tab = "pdf" | "summary" | "outline" | "audio";
+type Tab = "pdf" | "summary" | "outline" | "exam" | "audio";
 
 const TABS: { value: Tab; label: string; icon: string }[] = [
   { value: "summary", label: "Resumen", icon: "book" },
   { value: "outline", label: "Esquema", icon: "outline" },
+  { value: "exam", label: "Examen", icon: "exam" },
   { value: "audio", label: "Audio", icon: "headphones" },
   { value: "pdf", label: "PDF", icon: "file" },
 ];
@@ -439,6 +441,15 @@ export function DocumentView({ documentId }: { documentId: string }) {
             onPageClick={openPage}
             onRegenerate={() => setRegenerateScope({ scope: "outline" })}
             regenerating={busyAll}
+          />
+        ) : null}
+
+        {tab === "exam" ? (
+          <ExamTab
+            documentId={documentId}
+            documentTitle={document_.title}
+            listo={Boolean(detail.summary?.sections.length)}
+            onPageClick={openPage}
           />
         ) : null}
 

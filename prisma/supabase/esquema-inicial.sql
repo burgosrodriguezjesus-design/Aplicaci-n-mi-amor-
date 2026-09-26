@@ -185,6 +185,19 @@ CREATE TABLE "Outline" (
 );
 
 -- CreateTable
+CREATE TABLE "Exam" (
+    "id" TEXT NOT NULL,
+    "documentId" TEXT NOT NULL,
+    "content" TEXT NOT NULL,
+    "provider" TEXT NOT NULL,
+    "version" INTEGER NOT NULL DEFAULT 1,
+    "isCurrent" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "Exam_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "AudioTrack" (
     "id" TEXT NOT NULL,
     "documentId" TEXT NOT NULL,
@@ -313,6 +326,9 @@ CREATE INDEX "SummarySection_summaryId_position_idx" ON "SummarySection"("summar
 CREATE INDEX "Outline_documentId_isCurrent_idx" ON "Outline"("documentId", "isCurrent");
 
 -- CreateIndex
+CREATE INDEX "Exam_documentId_isCurrent_idx" ON "Exam"("documentId", "isCurrent");
+
+-- CreateIndex
 CREATE INDEX "AudioTrack_documentId_position_idx" ON "AudioTrack"("documentId", "position");
 
 -- CreateIndex
@@ -362,6 +378,9 @@ ALTER TABLE "SummarySection" ADD CONSTRAINT "SummarySection_summaryId_fkey" FORE
 
 -- AddForeignKey
 ALTER TABLE "Outline" ADD CONSTRAINT "Outline_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "Document"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Exam" ADD CONSTRAINT "Exam_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "Document"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "AudioTrack" ADD CONSTRAINT "AudioTrack_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "Document"("id") ON DELETE CASCADE ON UPDATE CASCADE;
