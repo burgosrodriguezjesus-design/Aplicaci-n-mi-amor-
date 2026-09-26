@@ -8,6 +8,16 @@ import { useSession } from "@/components/AppShell";
 import { useTheme } from "@/components/providers/ThemeProvider";
 import { useToast } from "@/components/providers/ToastProvider";
 import { Icon } from "@/components/ui/Icon";
+import {
+  ESTILOS_VOZ,
+  type EstiloVoz,
+  elegirVoz,
+  estiloGuardado,
+  guardarEstilo,
+  guardarVoz,
+  probarVoz,
+  vozGuardada,
+} from "@/lib/client/voz";
 
 function Seccion({ icon, title, hint, children }: { icon: string; title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -60,8 +70,27 @@ export function SettingsView() {
   const [level, setLevel] = useState(user.educationLevel);
   const [style, setStyle] = useState(user.explanationStyle);
   const [depth, setDepth] = useState(user.summaryDepth);
-  const [voice, setVoice] = useState(user.preferredVoice ?? "");
+  const [voice, setVoice] = useState("");
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [estiloVoz, setEstiloVoz] = useState<EstiloVoz>("natural");
+
+  // La voz y su estilo son de cada dispositivo (cada uno trae sus voces).
+  useEffect(() => {
+    setEstiloVoz(estiloGuardado());
+    setVoice(vozGuardada() ?? "");
+  }, []);
+
+  const elegirEstilo = (estilo: EstiloVoz) => {
+    setEstiloVoz(estilo);
+    guardarEstilo(estilo);
+    probarVoz(estilo, voice || null);
+  };
+
+  const elegirVozConcreta = (nombre: string) => {
+    setVoice(nombre);
+    guardarVoz(nombre || null);
+    probarVoz(estiloVoz, nombre || null);
+  };
   const [saving, setSaving] = useState(false);
   const [installable, setInstallable] = useState<Event | null>(null);
 
@@ -91,7 +120,6 @@ export function SettingsView() {
         educationLevel: level,
         explanationStyle: style,
         summaryDepth: depth,
-        preferredVoice: voice || null,
       });
       toast({ title: "Preferencias guardadas", variant: "success" });
     } catch {
@@ -193,11 +221,55 @@ export function SettingsView() {
             </select>
           </label>
 
+          <button type="button" className="btn btn-primary btn-lg w-full sm:w-auto" onClick={save} disabled={saving}>
+            <Icon name="check" size={18} strokeWidth={2.4} />
+            {saving ? "Guardando…" : "Guardar preferencias"}
+          </button>
+        </div>
+      </Seccion>
+
+      <Seccion icon="headphones" title="Voz del audio" hint="Cómo te lee los resúmenes este dispositivo">
+        <div className="space-y-4">
+          <div className="grid gap-2.5 sm:grid-cols-2" role="radiogroup" aria-label="Estilo de voz">
+            {ESTILOS_VOZ.map((opcion) => {
+              const elegido = estiloVoz === opcion.value;
+              return (
+                <button
+                  key={opcion.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={elegido}
+                  onClick={() => elegirEstilo(opcion.value)}
+                  className="flex items-center gap-3 rounded-2xl border px-4 py-3.5 text-left transition"
+                  style={
+                    elegido
+                      ? { borderColor: "var(--accent)", background: "var(--accent-softer)", boxShadow: "0 0 0 3px var(--accent-ring)" }
+                      : { borderColor: "var(--border-strong)" }
+                  }
+                >
+                  <span className="icon-tile !h-10 !w-10 shrink-0">
+                    <Icon name={opcion.icon} size={19} />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[0.9rem] font-bold">{opcion.label}</span>
+                    <span className="mt-0.5 block text-[0.78rem] leading-snug" style={{ color: "var(--text-muted)" }}>
+                      {opcion.hint}
+                    </span>
+                  </span>
+                  {elegido ? <Icon name="checkCircle" size={19} className="shrink-0 text-[var(--accent)]" /> : null}
+                </button>
+              );
+            })}
+          </div>
+
           {voices.length ? (
             <label className="block">
-              <span className="label">Voz preferida</span>
-              <select className="input" value={voice} onChange={(event) => setVoice(event.target.value)}>
-                <option value="">Voz por defecto</option>
+              <span className="label">Voz</span>
+              <select className="input" value={voice} onChange={(event) => elegirVozConcreta(event.target.value)}>
+                <option value="">
+                  Automática{estiloVoz === "mago" ? " (la más grave que haya)" : ""}
+                  {elegirVoz(voices, estiloVoz) ? ` — ${elegirVoz(voices, estiloVoz)!.name}` : ""}
+                </option>
                 {voices.map((item) => (
                   <option key={item.name} value={item.name}>
                     {item.name} ({item.lang})
@@ -207,10 +279,16 @@ export function SettingsView() {
             </label>
           ) : null}
 
-          <button type="button" className="btn btn-primary btn-lg w-full sm:w-auto" onClick={save} disabled={saving}>
-            <Icon name="check" size={18} strokeWidth={2.4} />
-            {saving ? "Guardando…" : "Guardar preferencias"}
+          <button type="button" className="btn btn-secondary w-full sm:w-auto" onClick={() => probarVoz(estiloVoz, voice || null)}>
+            <Icon name="play" size={16} />
+            Escuchar cómo suena
           </button>
+
+          <p className="text-[0.78rem] leading-snug" style={{ color: "var(--text-muted)" }}>
+            {capabilities.serverTts
+              ? "Se aplica cuando el audio lo lee tu dispositivo; el audio preparado en el servidor usa su propia voz."
+              : "Se aplica al momento, también a lo que estés escuchando. Las voces dependen de tu móvil u ordenador: en iPhone puedes descargar voces mejores en Ajustes › Accesibilidad › Contenido leído › Voces."}
+          </p>
         </div>
       </Seccion>
 

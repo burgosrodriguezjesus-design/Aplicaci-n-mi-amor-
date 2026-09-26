@@ -15,6 +15,7 @@ import type { AudioTrackDto } from "@/lib/client/types";
 import { useSession } from "@/components/AppShell";
 import { api, ApiError } from "@/lib/client/api";
 import { useToast } from "@/components/providers/ToastProvider";
+import { ESTILOS_VOZ, type EstiloVoz, estiloGuardado, guardarEstilo, probarVoz, vozGuardada } from "@/lib/client/voz";
 
 export function AudioTab({
   documentId,
@@ -34,6 +35,14 @@ export function AudioTab({
 
   const [source, setSource] = useState<"SUMMARY" | "DOCUMENT">("SUMMARY");
   const [generating, setGenerating] = useState(false);
+  const [estiloVoz, setEstiloVoz] = useState<EstiloVoz>("natural");
+  useEffect(() => setEstiloVoz(estiloGuardado()), []);
+  const cambiarVoz = (estilo: EstiloVoz) => {
+    setEstiloVoz(estilo);
+    guardarEstilo(estilo);
+    // Si ya está sonando, se nota en la siguiente frase; si no, una muestra.
+    if (!player.isPlaying) probarVoz(estilo, vozGuardada());
+  };
 
   const summaryTracks = useMemo(
     () => allTracks.filter((track) => track.source === "SUMMARY"),
@@ -175,6 +184,30 @@ export function AudioTab({
             Se usa la voz de tu dispositivo: no necesita ninguna clave, pero se detiene si bloqueas la pantalla.
           </span>
         </p>
+      ) : null}
+
+      {!capabilities.serverTts ? (
+        <div className="no-scrollbar -mx-4 flex items-center gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0" role="radiogroup" aria-label="Voz">
+          <span className="mr-1 flex shrink-0 items-center gap-1.5 text-[0.82rem] font-semibold" style={{ color: "var(--text-muted)" }}>
+            <Icon name="volume" size={16} />
+            Voz
+          </span>
+          {ESTILOS_VOZ.map((opcion) => (
+            <button
+              key={opcion.value}
+              type="button"
+              role="radio"
+              aria-checked={estiloVoz === opcion.value}
+              className="filter-chip !min-h-9 shrink-0 !px-3.5"
+              onClick={() => cambiarVoz(opcion.value)}
+              data-active={estiloVoz === opcion.value}
+              title={opcion.hint}
+            >
+              <Icon name={opcion.icon} size={15} />
+              {opcion.label}
+            </button>
+          ))}
+        </div>
       ) : null}
 
       {isThisDocument && player.track ? (

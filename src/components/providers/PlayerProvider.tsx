@@ -17,6 +17,7 @@
  * lo que permite resaltar el texto y pulsar un párrafo para empezar ahí.
  */
 
+import { ajustesDe, elegirVoz, estiloGuardado, vozGuardada } from "@/lib/client/voz";
 import {
   createContext,
   useCallback,
@@ -165,13 +166,13 @@ export function PlayerProvider({
     }
   }, []);
 
+  /** Voz y estilo elegidos en Ajustes (se leen en cada frase: cambian al momento). */
   const pickVoice = useCallback(() => {
-    const voices = window.speechSynthesis.getVoices();
-    return (
-      voices.find((voice) => /^es[-_]ES/i.test(voice.lang)) ??
-      voices.find((voice) => /^es/i.test(voice.lang)) ??
-      null
-    );
+    const estilo = estiloGuardado();
+    return {
+      voice: elegirVoz(window.speechSynthesis.getVoices(), estilo, vozGuardada()),
+      ...ajustesDe(estilo),
+    };
   }, []);
 
   const speakFrom = useCallback(
@@ -202,9 +203,13 @@ export function PlayerProvider({
 
         const utterance = new SpeechSynthesisUtterance(segments[index].text);
         utterance.lang = "es-ES";
-        utterance.rate = rate;
-        const voice = pickVoice();
-        if (voice) utterance.voice = voice;
+        const { voice, pitch, ritmo } = pickVoice();
+        utterance.rate = rate * ritmo;
+        utterance.pitch = pitch;
+        if (voice) {
+          utterance.voice = voice;
+          utterance.lang = voice.lang;
+        }
 
         utterance.onstart = () => {
           speechBase.current = segments[index].startMs / 1000;

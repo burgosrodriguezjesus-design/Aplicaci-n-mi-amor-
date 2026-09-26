@@ -341,6 +341,20 @@ seccion("4. Documento: resumen, esquema, audio y PDF");
     await velocidad.click();
     comprobar("se cambia la velocidad", (await velocidad.getAttribute("data-active")) === "true");
   }
+  // Cambiar a «Mago sabio» mientras suena: las frases siguientes, más graves.
+  await page.evaluate(() => {
+    window.__habladas = [];
+    const original = window.speechSynthesis.speak.bind(window.speechSynthesis);
+    window.speechSynthesis.speak = (u) => {
+      window.__habladas.push({ pitch: u.pitch, rate: u.rate });
+      original(u);
+    };
+  });
+  await page.getByRole("radio", { name: /Mago sabio/ }).click();
+  await page.waitForTimeout(1500);
+  const conMago = await page.evaluate(() => window.__habladas);
+  comprobar("la voz «Mago sabio» se aplica al audio", conMago.length > 0 && conMago.every((u) => u.pitch < 1), JSON.stringify(conMago.slice(0, 3)));
+  await page.getByRole("radio", { name: /Natural/ }).click();
   await botonesConNombre(page, "audio");
   const pausa = page.getByRole("region", { name: "Reproductor" }).getByRole("button", { name: /Pausar|Reproducir/ });
   if (await pausa.count()) await pausa.first().click();
@@ -427,6 +441,27 @@ seccion("7. Ajustes");
     "tras recargar se conserva lo elegido",
     (await page.getByRole("button", { name: /Nivel avanzado/ }).getAttribute("aria-pressed")) === "true",
   );
+  // Voz del audio: «Mago sabio» se oye más grave y pausada, y se recuerda.
+  await page.evaluate(() => {
+    window.__habladas = [];
+    window.speechSynthesis.speak = (u) => window.__habladas.push({ pitch: u.pitch, rate: u.rate, text: u.text });
+  });
+  await page.getByRole("radio", { name: /Mago sabio/ }).click();
+  const muestra = await page.evaluate(() => window.__habladas.at(-1));
+  comprobar("«Mago sabio» suena más grave y pausado", muestra && muestra.pitch < 1 && muestra.rate < 1, JSON.stringify(muestra));
+  await page.reload();
+  await page.getByRole("radio", { name: /Mago sabio/ }).waitFor();
+  comprobar(
+    "la voz elegida se recuerda",
+    (await page.getByRole("radio", { name: /Mago sabio/ }).getAttribute("aria-checked")) === "true",
+  );
+  await page.evaluate(() => {
+    window.__habladas = [];
+    window.speechSynthesis.speak = (u) => window.__habladas.push({ pitch: u.pitch, rate: u.rate });
+  });
+  await page.getByRole("radio", { name: /Natural/ }).click();
+  const natural = await page.evaluate(() => window.__habladas.at(-1));
+  comprobar("y se vuelve a la voz natural", natural && natural.pitch === 1 && natural.rate === 1, JSON.stringify(natural));
   await page.getByRole("button", { name: /Oscuro/ }).click();
   comprobar("el modo oscuro se activa", (await page.getAttribute("html", "data-theme")) === "dark");
   await sinDesborde(page, "ajustes (oscuro)");
