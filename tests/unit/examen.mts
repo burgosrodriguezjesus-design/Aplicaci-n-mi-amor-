@@ -96,6 +96,27 @@ if (ohm) {
   const [i, r] = ohm.datos!.map((d) => Number(d.split(":")[1].replace(/[^\d,]/g, "")));
   comprobar("la ley de Ohm bien resuelta", ohm.respuesta.includes(`${(i * r).toLocaleString("es-ES")} V`), ohm.respuesta);
 }
+// ── Un libro enorme: el examen tiene que salir en un momento ─────────
+{
+  const temas = libro.filter((s) => !/Visión general/.test(s.titulo));
+  const enorme = Array.from({ length: 300 }, (_, i) =>
+    temas.map((s) => ({
+      titulo: `Unidad ${i + 1}`,
+      markdown: s.markdown
+        .replace(/^## .*/, `## Unidad ${i + 1}`)
+        .replace(/\*\*([^*]+)\*\*/g, (_m, t) => `**${t} ${i + 1}**`)
+        .replace(/\b(\d+)\b/g, (m) => String(Number(m) + i)),
+      paginas: [i + 1],
+    })),
+  ).flat();
+  const inicio = Date.now();
+  const grande = examenExtractivo("Libro enorme", enorme, "grande");
+  const ms = Date.now() - inicio;
+  console.log("\nLibro enorme (600 temas)");
+  comprobar("el examen de un libro enorme sale en menos de 3 segundos", ms < 3000, `${ms} ms`);
+  comprobar("y completo", grande.test.length === 20 && grande.cortas.length === 10 && grande.desarrollo.length === 5 && grande.ejercicios.length === 5);
+  comprobar("con preguntas de todo el libro, no solo del principio", new Set(grande.test.map((p) => p.fuente.apartado.split(" › ")[0])).size >= 8);
+}
 comprobar("un documento sin temario no da examen", examenExtractivo("x", [{ titulo: "Vacío", markdown: "Texto.", paginas: [1] }], "s").test.length === 0);
 
 console.log(fallos ? `\n${fallos} comprobación(es) con fallos` : "\nExámenes bien hechos");

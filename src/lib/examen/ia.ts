@@ -10,8 +10,26 @@ import { examenExtractivo } from "./generar";
 import type { SeccionResumen } from "./extraer";
 import { type Examen, OBJETIVO, esExamenValido, porDificultad } from "./tipos";
 
-/** Tope de texto que se manda al modelo (caracteres). */
-const MAXIMO = 150_000;
+/** Tope de texto que se manda al modelo (caracteres): más no mejora el examen y lo hace lento. */
+const MAXIMO = 90_000;
+/** Si la IA tarda más, se usa el examen sin IA: la petición nunca se queda colgada. */
+const ESPERA_IA_MS = 95_000;
+
+function conTiempoMaximo<T>(promesa: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolver, rechazar) => {
+    const reloj = setTimeout(() => rechazar(new Error("La IA ha tardado demasiado")), ms);
+    promesa.then(
+      (valor) => {
+        clearTimeout(reloj);
+        resolver(valor);
+      },
+      (error) => {
+        clearTimeout(reloj);
+        rechazar(error);
+      },
+    );
+  });
+}
 
 function textoParaElModelo(paginas: { numero: number; texto: string }[], secciones: SeccionResumen[]) {
   const original = paginas
@@ -91,13 +109,16 @@ export async function crearExamen(opts: {
   if (!getAnthropic()) return sinIa();
   try {
     const { fuente, texto } = textoParaElModelo(opts.paginas, opts.secciones);
-    const raw = await complete({
-      system:
-        "Eres un profesor experto en preparar exámenes en español. Solo usas el contenido que se te da y respondes siempre con JSON válido.",
-      user: prompt(opts.titulo, fuente, texto),
-      maxTokens: 24000,
-      effort: "medium",
-    });
+    const raw = await conTiempoMaximo(
+      complete({
+        system:
+          "Eres un profesor experto en preparar exámenes en español. Solo usas el contenido que se te da y respondes siempre con JSON válido.",
+        user: prompt(opts.titulo, fuente, texto),
+        maxTokens: 16000,
+        effort: "low",
+      }),
+      ESPERA_IA_MS,
+    );
     const parsed = parseJsonLoose<Partial<Examen>>(raw);
     const candidato = {
       titulo: opts.titulo,

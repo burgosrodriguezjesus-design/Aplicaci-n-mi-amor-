@@ -112,7 +112,10 @@ function distractores(correcta: string, candidatos: string[] | string[][], n: nu
       if ([...vistos].some((v) => v.length > 3 && k.length > 3 && (v.includes(k) || k.includes(v)))) continue;
       vistos.add(k);
       validos.push(opcion(c));
+      // Con unos pocos de sobra basta: en un libro largo hay miles.
+      if (validos.length >= n + 2) break;
     }
+    if (validos.length >= n + 2) break;
   }
   if (validos.length < n) return null;
   const largo = correcta.length;
@@ -189,10 +192,12 @@ function huecos(frase: string): Hueco[] {
   return salida;
 }
 
+/** Un solo formateador para todo (crear uno por número es muy lento). */
+const NUMERO = new Intl.NumberFormat("es-ES", { maximumFractionDigits: 2 });
+
 function formatear(valor: number, unidad: string) {
-  const n = valor.toLocaleString("es-ES", { maximumFractionDigits: 2 });
-  if (!unidad) return n;
-  return unidad === "%" || unidad === "€" ? `${n} ${unidad}` : `${n} ${unidad}`;
+  const n = NUMERO.format(valor);
+  return unidad ? `${n} ${unidad}` : n;
 }
 
 /** Tres cifras falsas y creíbles: primero las del propio documento con la misma unidad. */
@@ -208,8 +213,13 @@ function cifrasParecidas(h: Hueco, delDocumento: Hueco[], azar: Azar): string[] 
     }
     return candidatas;
   }
-  const mismos = delDocumento.filter((o) => o.tipo === h.tipo && o.unidad === h.unidad && o.valor !== h.valor);
-  for (const o of barajar(mismos, azar)) candidatas.push(formatear(o.valor, h.unidad));
+  // Cifras del propio documento con la misma unidad (unas pocas bastan).
+  const mismos = new Set<number>();
+  for (const o of delDocumento) {
+    if (o.tipo === h.tipo && o.unidad === h.unidad && o.valor !== h.valor) mismos.add(o.valor);
+    if (mismos.size >= 12) break;
+  }
+  for (const valor of barajar([...mismos], azar)) candidatas.push(formatear(valor, h.unidad));
   const v = h.valor;
   if (Number.isInteger(v) && v >= 100 && !h.unidad && !(v >= 1000 && v <= 2100)) {
     // Números de modelo, artículo, ley…: se parecen cambiando una cifra.
@@ -952,8 +962,33 @@ function elegir<T extends { plantilla: string; clave: string; dificultad: Dificu
 
 /* ── Examen ───────────────────────────────────────────────────── */
 
-export function examenDesdeContenido(titulo: string, c: Contenido, seed: string): Examen {
+/**
+ * En un libro largo hay miles de definiciones y datos: se trabaja con una
+ * muestra repartida por todo el documento (distinta en cada examen), así el
+ * examen sale en un momento sea cual sea el tamaño del libro.
+ */
+const MUESTRA = { definiciones: 160, listas: 80, datos: 200, razones: 80, formulas: 60, apartados: 160 } as const;
+
+function muestra(c: Contenido, azar: Azar): Contenido {
+  const tomar = <T,>(lista: T[], n: number) => {
+    if (lista.length <= n) return lista;
+    const elegidos = new Set(barajar(lista.map((_, i) => i), azar).slice(0, n));
+    return lista.filter((_, i) => elegidos.has(i));
+  };
+  return {
+    simbolos: c.simbolos,
+    definiciones: tomar(c.definiciones, MUESTRA.definiciones),
+    listas: tomar(c.listas, MUESTRA.listas),
+    datos: tomar(c.datos, MUESTRA.datos),
+    razones: tomar(c.razones, MUESTRA.razones),
+    formulas: tomar(c.formulas, MUESTRA.formulas),
+    apartados: tomar(c.apartados, MUESTRA.apartados),
+  };
+}
+
+export function examenDesdeContenido(titulo: string, todo: Contenido, seed: string): Examen {
   const azar = generador(semilla(seed));
+  const c = muestra(todo, azar);
   const usados = new Set<string>();
 
   const test = elegir(candidatasTest(c, azar), OBJETIVO.test, repartoPara(OBJETIVO.test, { FACIL: 7, MEDIA: 8, DIFICIL: 5 }), usados, azar);

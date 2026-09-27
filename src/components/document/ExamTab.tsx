@@ -102,7 +102,7 @@ export function ExamTab({
   const crear = async () => {
     setCreando(true);
     try {
-      const r = await api.post<{ exam: ExamDto }>(`/api/documents/${documentId}/exam`);
+      const r = await api.post<{ exam: ExamDto }>(`/api/documents/${documentId}/exam`, undefined, { timeoutMs: 150_000 });
       setDto(r.exam);
       setFiltro("TODAS");
       toast({ title: dto ? "Nuevo examen listo" : "Examen listo", variant: "success" });

@@ -13,11 +13,15 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
+async function request<T>(url: string, init?: RequestInit, timeoutMs?: number): Promise<T> {
   let response: Response;
+  // Tiempo máximo de espera: nada se queda "cargando" para siempre.
+  const control = timeoutMs ? new AbortController() : null;
+  const reloj = control ? setTimeout(() => control.abort(), timeoutMs) : null;
   try {
     response = await fetch(url, {
       ...init,
+      signal: control?.signal ?? init?.signal,
       headers: {
         ...(init?.body && !(init.body instanceof FormData)
           ? { "Content-Type": "application/json" }
@@ -26,21 +30,32 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
       },
     });
   } catch {
+    if (control?.signal.aborted) {
+      throw new ApiError("El servidor está tardando demasiado. Inténtalo de nuevo en un momento.", 0, "TIMEOUT");
+    }
     throw new ApiError(
       "No hay conexión con el servidor. Comprueba tu red e inténtalo de nuevo.",
       0,
       "NETWORK",
     );
+  } finally {
+    if (reloj) clearTimeout(reloj);
   }
 
   if (response.status === 204) return undefined as T;
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
+  let data: { error?: { message?: string; code?: string } } & Record<string, unknown> = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    // Una página de error del alojamiento (p. ej., tiempo agotado), no JSON.
+  }
 
   if (!response.ok) {
     throw new ApiError(
-      data?.error?.message ?? "Ha ocurrido un error inesperado.",
+      data?.error?.message ??
+        (response.status === 504 ? "El servidor ha tardado demasiado. Inténtalo de nuevo." : "Ha ocurrido un error inesperado."),
       response.status,
       data?.error?.code ?? "UNKNOWN",
     );
@@ -50,8 +65,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   get: <T>(url: string) => request<T>(url),
-  post: <T>(url: string, body?: unknown) =>
-    request<T>(url, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  post: <T>(url: string, body?: unknown, opciones?: { timeoutMs?: number }) =>
+    request<T>(url, { method: "POST", body: body ? JSON.stringify(body) : undefined }, opciones?.timeoutMs),
   patch: <T>(url: string, body: unknown) =>
     request<T>(url, { method: "PATCH", body: JSON.stringify(body) }),
   delete: <T>(url: string) => request<T>(url, { method: "DELETE" }),
