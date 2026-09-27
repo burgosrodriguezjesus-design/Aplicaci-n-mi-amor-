@@ -1,14 +1,15 @@
 import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
-import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth";
 import { fail, route } from "@/lib/api";
 import { env } from "@/lib/env";
 import { promptDeSistema, responder } from "@/lib/ai/chat";
+import { responderSinIa } from "@/lib/preguntas/motor";
+import { cargarDocumento } from "@/lib/preguntas/documento";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Una respuesta larga (con búsqueda web) puede tardar un par de minutos.
+// Con IA, una respuesta larga puede tardar; sin IA es inmediata.
 export const maxDuration = 300;
 
 const schema = z.object({
@@ -21,50 +22,31 @@ const schema = z.object({
     )
     .min(1)
     .max(60),
-  documentId: z.string().max(64).nullable().optional(),
+  documentId: z.string().min(1, "Elige un documento.").max(64),
 });
 
 /**
- * Conversación con el asistente. Responde en streaming, una línea JSON por
- * evento: {"t":"texto","v":"…"}, {"t":"buscando"}, {"t":"fin"} o
- * {"t":"error","v":"mensaje"}.
+ * Preguntas sobre un documento del estudiante: solo sobre lo que dice ese
+ * documento. Responde en streaming, una línea JSON por evento:
+ * {"t":"texto","v":"…"}, {"t":"fin"} o {"t":"error","v":"mensaje"}.
+ *
+ * Funciona siempre, sin activar nada: sin clave de IA responde el motor que
+ * busca en el propio documento; con clave, la IA (limitada al documento).
  */
 export const POST = route(async (request: Request) => {
   const user = await requireUser();
   const body = schema.parse(await request.json());
-  if (!env.ai.enabled) {
-    return fail("El asistente de IA no está activado todavía.", 503, "AI_UNAVAILABLE");
-  }
 
-  // Solo los últimos mensajes (y siempre empezando por una pregunta).
   let mensajes = body.mensajes.slice(-30);
   while (mensajes.length && mensajes[0].role !== "user") mensajes = mensajes.slice(1);
   if (!mensajes.length || mensajes[mensajes.length - 1].role !== "user") {
     return fail("Falta la pregunta.", 422, "VALIDATION_ERROR");
   }
 
-  let documento: { titulo: string; resumen: string } | null = null;
-  if (body.documentId) {
-    const doc = await prisma.document.findFirst({
-      where: { id: body.documentId, userId: user.id },
-      include: {
-        summaries: {
-          where: { isCurrent: true },
-          take: 1,
-          include: { sections: { orderBy: { position: "asc" }, select: { markdown: true } } },
-        },
-      },
-    });
-    if (!doc) return fail("No encontramos ese documento.", 404, "NOT_FOUND");
-    documento = {
-      titulo: doc.title,
-      resumen: (doc.summaries[0]?.sections ?? []).map((s) => s.markdown).join("\n\n"),
-    };
-  }
+  const cargado = await cargarDocumento(user.id, body.documentId);
+  if (!cargado) return fail("No encontramos ese documento.", 404, "NOT_FOUND");
 
-  const sistema = promptDeSistema({ nombre: user.name, nivel: user.educationLevel, documento });
   const codificador = new TextEncoder();
-
   const cuerpo = new ReadableStream<Uint8Array>({
     async start(control) {
       const enviar = (evento: Record<string, string>) => {
@@ -75,15 +57,32 @@ export const POST = route(async (request: Request) => {
         }
       };
       try {
-        const { texto, rechazada } = await responder({
-          mensajes,
-          sistema,
-          alEscribir: (v) => enviar({ t: "texto", v }),
-          alBuscar: () => enviar({ t: "buscando" }),
-          senal: request.signal,
-        });
-        if (rechazada && !texto.trim()) {
-          enviar({ t: "error", v: "No puedo ayudarte con esa pregunta. Prueba a plantearla de otra forma." });
+        if (!env.ai.enabled) {
+          // Sin IA: la respuesta sale del propio documento, al momento. Se
+          // manda por líneas para que se vea aparecer.
+          const preguntas = mensajes.filter((m) => m.role === "user").map((m) => m.content);
+          const respuesta = responderSinIa(cargado.documento, preguntas[preguntas.length - 1], preguntas.slice(0, -1));
+          const lineas = respuesta.split(/(?<=\n)/);
+          for (const linea of lineas) {
+            if (request.signal.aborted) break;
+            enviar({ t: "texto", v: linea });
+            if (lineas.length > 1) await new Promise((r) => setTimeout(r, 25));
+          }
+        } else {
+          const sistema = promptDeSistema({
+            nombre: user.name,
+            nivel: user.educationLevel,
+            documento: { titulo: cargado.documento.titulo, resumen: cargado.resumen },
+          });
+          const { texto, rechazada } = await responder({
+            mensajes,
+            sistema,
+            alEscribir: (v) => enviar({ t: "texto", v }),
+            senal: request.signal,
+          });
+          if (rechazada && !texto.trim()) {
+            enviar({ t: "error", v: "No puedo ayudarte con esa pregunta. Prueba a plantearla de otra forma." });
+          }
         }
         enviar({ t: "fin" });
       } catch (error) {
@@ -91,11 +90,9 @@ export const POST = route(async (request: Request) => {
           const mensaje =
             error instanceof Anthropic.RateLimitError
               ? "Hay muchas preguntas a la vez. Espera un momento y vuelve a intentarlo."
-              : error instanceof Anthropic.AuthenticationError
-                ? "La clave de IA del servidor no es válida. Revísala en la configuración."
-                : error instanceof Anthropic.APIConnectionError
-                  ? "No se ha podido conectar con el servicio de IA. Inténtalo de nuevo."
-                  : "Ha habido un problema al responder. Inténtalo de nuevo.";
+              : error instanceof Anthropic.APIConnectionError
+                ? "No se ha podido conectar con el servicio de IA. Inténtalo de nuevo."
+                : "Ha habido un problema al responder. Inténtalo de nuevo.";
           enviar({ t: "error", v: mensaje });
         }
       } finally {

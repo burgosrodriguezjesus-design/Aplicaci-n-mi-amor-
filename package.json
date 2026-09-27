@@ -33,7 +33,8 @@
     "test:completar-esquema": "tsx tests/unit/completar-esquema.mts",
     "test:voz": "tsx tests/unit/voz.mts",
     "test:examen": "tsx tests/unit/examen.mts",
-    "test:chat": "node tests/e2e/chat.mjs"
+    "test:chat": "node tests/e2e/chat.mjs",
+    "test:preguntas": "tsx tests/unit/preguntas.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

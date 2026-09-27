@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * «Pregúntale a alicIA» de principio a fin, sin gastar en IA: se levanta un
- * servidor que imita la API de Anthropic (respuestas en streaming) y la app
- * se arranca apuntando a él. Comprueba que la respuesta aparece mientras se
- * escribe, que se manda el documento como contexto, la búsqueda web, el
+ * «Pregúntale a alicIA» cuando el servidor tiene clave de IA, sin gastar en
+ * IA: se levanta un servidor que imita la API de Anthropic (respuestas en
+ * streaming) y la app se arranca apuntando a él. Comprueba que la respuesta
+ * aparece mientras se escribe, que la IA queda limitada al documento, el
  * reintento sin extras, los errores y que nadie pregunta por documentos
- * ajenos.
+ * ajenos. (Sin clave, responde el motor sin IA: tests/unit/preguntas.mts y
+ * el recorrido general.)
  *
  *   (con la app ya construida)  node tests/e2e/chat.mjs
  */
@@ -45,7 +46,7 @@ const ia = createServer((req, res) => {
       res.writeHead(500, { "content-type": "application/json" });
       return res.end(JSON.stringify({ type: "error", error: { type: "api_error", message: "fallo" } }));
     }
-    if (pregunta.includes("PRUEBA_400") && datos.tools) {
+    if (pregunta.includes("PRUEBA_400") && datos.fallbacks) {
       res.writeHead(400, { "content-type": "application/json" });
       return res.end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "web search not enabled" } }));
     }
@@ -106,16 +107,33 @@ try {
   const errores = [];
   page.on("pageerror", (e) => errores.push(e.message));
 
-  console.log("\n1. Pregunta general");
+  console.log("\n1. Preguntar sobre un documento (con IA)");
   const correo = `chat-${randomUUID().slice(0, 8)}@estudia.test`;
   await page.request.post(BASE + "/api/auth/register", { data: { name: "Lucía Pérez", email: correo, password: "clave-de-prueba-1", educationLevel: "FP" } });
   await page.goto(BASE + "/preguntar");
   await page.getByRole("heading", { name: "Pregúntale a alicIA" }).waitFor();
-  comprobar("saluda por el nombre", await page.getByText("Hola, Lucía").isVisible());
-  comprobar("propone preguntas de ejemplo", (await page.getByRole("button", { name: /ley de Ohm/ }).count()) === 1);
+  comprobar("sin documentos, invita a subir uno", await page.getByRole("link", { name: /Subir un PDF/ }).waitFor({ timeout: 10_000 }).then(() => true, () => false));
   comprobar("la navegación tiene «Preguntar»", (await page.getByRole("link", { name: "Preguntar" }).count()) > 0);
 
-  await page.getByLabel("Tu pregunta").fill("¿Qué es la fotosíntesis?");
+  const subida = await page.request.post(BASE + "/api/documents", { multipart: { file: { name: "IVA.pdf", mimeType: "application/pdf", buffer: await readFile(path.join(raiz, "tests/fixtures/apuntes-demo.pdf")) } } });
+  const subido = await subida.json().catch(() => ({}));
+  if (!subido.document) throw new Error(`No se pudo subir el documento: ${subida.status()} ${JSON.stringify(subido).slice(0, 200)}`);
+  const docId = subido.document.id;
+  for (let i = 0; i < 200; i++) {
+    await page.request.post(BASE + "/api/jobs/tick");
+    const s = await (await page.request.get(`${BASE}/api/documents/${docId}/status`)).json();
+    if (s.document.status === "READY" || s.document.status === "FAILED") break;
+    await page.waitForTimeout(800);
+  }
+
+  await page.goto(`${BASE}/documento/${docId}`);
+  await page.getByRole("link", { name: /Preguntar a alicIA/ }).click();
+  await page.waitForURL(/\/preguntar\?doc=/);
+  await page.getByText(/Pregúntame lo que quieras sobre «IVA»/).waitFor();
+  comprobar("desde el documento se abre el chat de ese documento", true);
+  comprobar("saluda por el nombre", await page.getByText("Hola, Lucía").isVisible());
+
+  await page.getByLabel("Tu pregunta").fill("¿Qué es la intensidad?");
   await page.getByRole("button", { name: "Enviar pregunta" }).click();
   // Mientras llega, el texto va creciendo (streaming): se mide varias veces.
   const burbuja = page.locator('[data-mensaje="asistente"]').last();
@@ -128,21 +146,24 @@ try {
   }
   const completa = (await burbuja.textContent()) ?? "";
   comprobar("la respuesta aparece mientras se escribe", largos.size >= 3, `${largos.size} tamaños distintos`);
-  comprobar("responde a lo preguntado", completa.includes("fotosíntesis"));
-  comprobar("sin documento, no manda contexto", completa.includes("Contexto del documento: no"));
+  comprobar("responde a lo preguntado", completa.includes("intensidad"));
+  comprobar("con el documento como contexto", completa.includes("Contexto del documento: sí"));
   comprobar("el formato (negritas) se ve bien", (await burbuja.locator("strong").count()) > 0);
 
   const chat = peticiones.filter((p) => (p.datos.system ?? []).some((b) => b.text.includes("Eres alicIA"))).at(-1);
+  const sistema = chat?.datos.system?.[0]?.text ?? "";
+  comprobar("la IA solo responde con el documento", /SOLO con la información de ese documento/.test(sistema) && /No uses conocimiento de fuera/.test(sistema));
+  comprobar("y el contexto es el resumen de SU documento", /<documento titulo="IVA">/.test(sistema));
+  comprobar("no busca en internet", !chat?.datos.tools);
   comprobar("usa el modelo configurado (Claude Opus 5 por defecto)", chat?.datos.model === "claude-opus-5", chat?.datos.model);
   comprobar("pide la respuesta en streaming", chat?.datos.stream === true);
-  comprobar("puede buscar en internet", chat?.datos.tools?.[0]?.type === "web_search_20260209");
   comprobar("si el modelo rechaza, reintenta con otro (fallbacks)", chat?.datos.fallbacks === "default" && String(chat?.cabeceras["anthropic-beta"]).includes("server-side-fallback-2026-07-01"));
   comprobar("el prompt de sistema va en caché", chat?.datos.system?.[0]?.cache_control?.type === "ephemeral");
-  comprobar("adapta las explicaciones a su nivel", chat?.datos.system?.[0]?.text.includes("FP"));
+  comprobar("adapta las explicaciones a su nivel", sistema.includes("FP"));
   comprobar("la clave nunca llega al navegador", !(await page.content()).includes("clave-de-prueba"));
 
   console.log("\n2. Conversación con memoria");
-  await page.getByLabel("Tu pregunta").fill("¿Y en las plantas de interior?");
+  await page.getByLabel("Tu pregunta").fill("¿Y cómo se mide?");
   await page.getByRole("button", { name: "Enviar pregunta" }).click();
   await page.locator('[data-mensaje="asistente"]').nth(1).getByText(/Historial: 3 mensajes/).waitFor({ timeout: 20_000 });
   comprobar("manda la conversación entera (recuerda lo anterior)", true);
@@ -152,48 +173,13 @@ try {
   await page.getByRole("button", { name: /Nueva conversación/ }).click();
   comprobar("«Nueva conversación» la vacía", (await page.locator("[data-mensaje]").count()) === 0);
 
-  console.log("\n3. Preguntar sobre un documento");
-  const subida = await page.request.post(BASE + "/api/documents", { multipart: { file: { name: "IVA.pdf", mimeType: "application/pdf", buffer: await readFile(path.join(raiz, "tests/fixtures/apuntes-demo.pdf")) } } });
-  const subido = await subida.json().catch(() => ({}));
-  if (!subido.document) throw new Error(`No se pudo subir el documento: ${subida.status()} ${JSON.stringify(subido).slice(0, 200)}`);
-  const docId = subido.document.id;
-  for (let i = 0; i < 200; i++) {
-    await page.request.post(BASE + "/api/jobs/tick");
-    const s = await (await page.request.get(`${BASE}/api/documents/${docId}/status`)).json();
-    if (s.document.status === "READY" || s.document.status === "FAILED") break;
-    await page.waitForTimeout(800);
-  }
-  await page.goto(`${BASE}/documento/${docId}`);
-  await page.getByRole("link", { name: /Preguntar a alicIA/ }).click();
-  await page.waitForURL(/\/preguntar\?doc=/);
-  await page.getByText(/Conozco el resumen de/).waitFor();
-  comprobar("desde el documento se abre el chat con ese documento", true);
-  await page.getByRole("button", { name: /5 ideas clave/ }).click();
-  await page.locator('[data-mensaje="asistente"]').last().getByText(/Historial/).waitFor({ timeout: 20_000 });
-  comprobar("manda el resumen del documento como contexto", (await page.locator('[data-mensaje="asistente"]').last().textContent()).includes("Contexto del documento: sí"));
-  const conDoc = peticiones.at(-1);
-  comprobar("el contexto es el resumen de SU documento", /<documento titulo="IVA">/.test(conDoc.datos.system[0].text) && conDoc.datos.system[0].text.includes("IVA"));
-  await page.getByLabel("Tema de la conversación").selectOption("");
-  await page.waitForURL(/\/preguntar$/);
-  await page.waitForFunction(() => document.querySelectorAll("[data-mensaje]").length === 0, null, { timeout: 5000 }).catch(() => undefined);
-  comprobar(
-    "cada tema tiene su conversación",
-    (await page.locator("[data-mensaje]").count()) === 0,
-    `${await page.locator("[data-mensaje]").count()} mensajes; guardado: ${await page.evaluate(() => JSON.stringify(Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith("alicia-chat")).map((k) => [k, JSON.parse(localStorage.getItem(k)).map((m) => m.content.slice(0, 30))]))))}`,
-  );
-  await page.getByLabel("Tema de la conversación").selectOption(docId);
-  await page.locator('[data-mensaje="usuario"]').first().waitFor({ timeout: 5000 }).catch(() => undefined);
-  comprobar("y al volver al documento, su conversación sigue ahí", (await page.locator('[data-mensaje="usuario"]').count()) === 1);
-  await page.getByLabel("Tema de la conversación").selectOption("");
-  await page.waitForURL(/\/preguntar$/);
-
-  console.log("\n4. Reintentos y errores");
+  console.log("\n3. Reintentos y errores");
   const antes = peticiones.length;
-  await page.getByLabel("Tu pregunta").fill("PRUEBA_400 ¿qué hora es?");
+  await page.getByLabel("Tu pregunta").fill("PRUEBA_400 ¿qué es el IVA?");
   await page.getByRole("button", { name: "Enviar pregunta" }).click();
   await page.locator('[data-mensaje="asistente"]').last().getByText(/Historial/).waitFor({ timeout: 20_000 });
   const reintento = peticiones.slice(antes);
-  comprobar("si la cuenta no admite búsqueda web, contesta sin ella", reintento.length === 2 && reintento[0].datos.tools && !reintento[1].datos.tools, reintento.map((p) => Boolean(p.datos.tools)).join(","));
+  comprobar("si la cuenta no admite el reintento en otro modelo, contesta sin él", reintento.length === 2 && reintento[0].datos.fallbacks && !reintento[1].datos.fallbacks, reintento.map((p) => Boolean(p.datos.fallbacks)).join(","));
   await page.getByLabel("Tu pregunta").fill("PRUEBA_500 falla");
   await page.getByRole("button", { name: "Enviar pregunta" }).click();
   await page.getByText(/Ha habido un problema al responder/).waitFor({ timeout: 60_000 });
@@ -207,8 +193,10 @@ try {
   comprobar("nadie puede preguntar sobre un documento ajeno", ajeno.status() === 404, `${ajeno.status()}`);
   const anonimo = await (await browser.newContext()).request.post(BASE + "/api/chat", { data: { mensajes: [{ role: "user", content: "hola" }] } });
   comprobar("sin sesión, no hay chat", anonimo.status() === 401, `${anonimo.status()}`);
-  const vacio = await page.request.post(BASE + "/api/chat", { data: { mensajes: [] } });
+  const vacio = await page.request.post(BASE + "/api/chat", { data: { mensajes: [], documentId: docId } });
   comprobar("una petición vacía se rechaza", vacio.status() === 422, `${vacio.status()}`);
+  const sinDoc = await page.request.post(BASE + "/api/chat", { data: { mensajes: [{ role: "user", content: "hola" }] } });
+  comprobar("sin documento no hay chat (solo pregunta sobre tus PDF)", sinDoc.status() === 422, `${sinDoc.status()}`);
   await otro.close();
 
   await page.request.delete(`${BASE}/api/documents/${docId}`);

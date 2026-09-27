@@ -471,16 +471,29 @@ seccion("6. Biblioteca y asignaturas");
   comprobar("aparece el filtro de la asignatura", await page.getByRole("button", { name: /Economía/ }).isVisible());
 }
 
-/* ── 6b. Asistente sin IA configurada ──────────────────────────── */
-seccion("6b. Pregúntale a alicIA (sin clave de IA en el servidor)");
+/* ── 6b. Preguntar al documento (sin clave de IA) ─────────────── */
+seccion("6b. Pregúntale a alicIA: responde sobre el PDF sin activar nada");
 {
   await page.goto(BASE + "/preguntar");
   await page.getByRole("heading", { name: "Pregúntale a alicIA" }).waitFor();
-  comprobar("explica cómo activar el asistente", await page.locator("[data-chat-inactivo]").isVisible());
-  comprobar("sin mostrar ninguna clave", !(await page.content()).includes("sk-ant"));
-  const r = await page.request.post(BASE + "/api/chat", { data: { mensajes: [{ role: "user", content: "hola" }] } });
-  comprobar("el servidor responde que falta activarlo (no se cuelga)", r.status() === 503, `${r.status()}`);
+  await page.waitForURL(/\/preguntar\?doc=/, { timeout: 10_000 });
+  comprobar("elige solo el documento más reciente", true);
+  const sugerencia = page.getByRole("button", { name: /^¿/ }).first();
+  await sugerencia.waitFor({ timeout: 10_000 });
+  comprobar("propone preguntas sacadas del documento", (await page.getByRole("button", { name: /^¿/ }).count()) >= 2);
+  await page.getByLabel("Tu pregunta").fill("¿Qué es la intensidad?");
+  await page.getByRole("button", { name: "Enviar pregunta" }).click();
+  const respuesta = page.locator('[data-mensaje="asistente"]').last();
+  await respuesta.getByText(/carga electrica/i).waitFor({ timeout: 15_000 });
+  comprobar("responde con lo que dice el documento", true);
+  comprobar("y dice la página", await respuesta.getByText(/pág\. \d/).first().waitFor({ timeout: 10_000 }).then(() => true, () => false));
+  await page.getByLabel("Tu pregunta").fill("¿Cuál es la capital de Francia?");
+  await page.getByRole("button", { name: "Enviar pregunta" }).click();
+  await page.locator('[data-mensaje="asistente"]').nth(1).getByText(/No encuentro nada sobre eso/).waitFor({ timeout: 15_000 });
+  comprobar("si no está en el documento, lo dice (no inventa)", true);
+  comprobar("no pide activar nada", (await page.getByText(/ANTHROPIC_API_KEY|casi listo/).count()) === 0);
   await sinDesborde(page, "preguntar");
+  await page.getByRole("button", { name: /Nueva conversación/ }).click();
 }
 
 /* ── 7. Ajustes ────────────────────────────────────────────────── */
