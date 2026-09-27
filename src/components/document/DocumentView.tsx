@@ -320,6 +320,14 @@ export function DocumentView({ documentId }: { documentId: string }) {
                 </span>
               ) : null}
             </div>
+            <Link
+              href={`/preguntar?doc=${documentId}`}
+              className="btn btn-soft btn-sm mt-3"
+              aria-label="Preguntar a alicIA sobre este documento"
+            >
+              <Icon name="sparkles" size={15} />
+              Preguntar a alicIA
+            </Link>
           </div>
         </div>
       </header>

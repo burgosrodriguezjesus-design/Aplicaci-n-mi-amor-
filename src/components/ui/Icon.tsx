@@ -45,6 +45,10 @@ import {
   LogOut,
   Mail,
   Maximize2,
+  MessageCircle,
+  SendHorizontal,
+  Square,
+  Globe,
   Minimize2,
   Moon,
   NotebookPen,
@@ -167,6 +171,10 @@ const ICONS: Record<string, LucideIcon> = {
   printer: Printer,
   eyeOff: EyeOff,
   xCircle: CircleX,
+  chat: MessageCircle,
+  send: SendHorizontal,
+  stop: Square,
+  globe: Globe,
 };
 
 export function Icon({

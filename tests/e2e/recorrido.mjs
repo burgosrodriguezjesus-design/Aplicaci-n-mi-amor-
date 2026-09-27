@@ -471,6 +471,18 @@ seccion("6. Biblioteca y asignaturas");
   comprobar("aparece el filtro de la asignatura", await page.getByRole("button", { name: /Economía/ }).isVisible());
 }
 
+/* ── 6b. Asistente sin IA configurada ──────────────────────────── */
+seccion("6b. Pregúntale a alicIA (sin clave de IA en el servidor)");
+{
+  await page.goto(BASE + "/preguntar");
+  await page.getByRole("heading", { name: "Pregúntale a alicIA" }).waitFor();
+  comprobar("explica cómo activar el asistente", await page.locator("[data-chat-inactivo]").isVisible());
+  comprobar("sin mostrar ninguna clave", !(await page.content()).includes("sk-ant"));
+  const r = await page.request.post(BASE + "/api/chat", { data: { mensajes: [{ role: "user", content: "hola" }] } });
+  comprobar("el servidor responde que falta activarlo (no se cuelga)", r.status() === 503, `${r.status()}`);
+  await sinDesborde(page, "preguntar");
+}
+
 /* ── 7. Ajustes ────────────────────────────────────────────────── */
 seccion("7. Ajustes");
 {
@@ -518,7 +530,7 @@ seccion("7. Ajustes");
 seccion("8. Todas las pantallas en móvil pequeño, móvil, tableta y ordenador, en claro y oscuro");
 {
   const estado = await contexto.storageState();
-  const rutas = ["/inicio", "/biblioteca", "/subir", "/ajustes", `/documento/${docId}?tab=summary`, `/documento/${docId}?tab=outline`, `/documento/${docId}?tab=exam`, `/documento/${docId}?tab=audio`, `/documento/${docId}?tab=pdf`];
+  const rutas = ["/inicio", "/biblioteca", "/subir", "/preguntar", "/ajustes", `/documento/${docId}?tab=summary`, `/documento/${docId}?tab=outline`, `/documento/${docId}?tab=exam`, `/documento/${docId}?tab=audio`, `/documento/${docId}?tab=pdf`];
   for (const [nombre, ancho, alto] of [["320", 320, 640], ["390", 390, 844], ["768", 768, 1024], ["1440", 1440, 900]]) {
     for (const esquema of ["light", "dark"]) {
       const v = await nuevaPagina({ viewport: { width: ancho, height: alto }, isMobile: ancho < 700, colorScheme: esquema, storageState: estado });

@@ -95,6 +95,8 @@ export const env = {
     apiKey: str("ANTHROPIC_API_KEY"),
     model: str("AI_MODEL", "claude-opus-5"),
     deepModel: str("AI_MODEL_DEEP", str("AI_MODEL", "claude-opus-5")),
+    /** Modelo del asistente «Pregúntale a alicIA». */
+    chatModel: str("AI_CHAT_MODEL", str("AI_MODEL", "claude-opus-5")),
     /** Fragmentos analizados en paralelo. Súbelo si tu cuenta admite más ritmo. */
     concurrency: Math.min(12, Math.max(1, int("AI_CONCURRENCY", 4))),
     get enabled() {

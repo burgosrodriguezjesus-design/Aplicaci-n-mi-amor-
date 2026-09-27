@@ -1060,3 +1060,16 @@ input[type="range"].scrubber::-moz-range-thumb {
   background-size: 44px 44px;
   mask-image: radial-gradient(ellipse at 50% 0%, #000 30%, transparent 75%);
 }
+
+/* Respuestas del asistente: letra de interfaz, más compacta que un resumen. */
+.prose-study.chat-respuesta {
+  font-family: var(--font-sans);
+  font-size: 0.94rem;
+  line-height: 1.6;
+}
+.prose-study.chat-respuesta > :first-child {
+  margin-top: 0;
+}
+.prose-study.chat-respuesta > :last-child {
+  margin-bottom: 0;
+}

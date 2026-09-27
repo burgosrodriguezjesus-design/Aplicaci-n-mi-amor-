@@ -27,6 +27,7 @@ export function useSession() {
 const NAV = [
   { href: "/inicio", label: "Inicio", icon: "home" },
   { href: "/biblioteca", label: "Biblioteca", icon: "library" },
+  { href: "/preguntar", label: "Preguntar", icon: "sparkles" },
   { href: "/ajustes", label: "Ajustes", icon: "settings" },
 ];
 
@@ -191,14 +192,14 @@ export function AppShell({
             </main>
           </div>
 
-          {/* Navegación inferior (móvil): Inicio · Subir · Biblioteca */}
+          {/* Navegación inferior (móvil): Inicio · Biblioteca · Subir · Preguntar · Ajustes */}
           <nav
             className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t md:hidden"
             style={{ background: "var(--glass)", backdropFilter: "saturate(180%) blur(18px)" }}
             aria-label="Principal"
           >
-            <div className="mx-auto grid h-[4.35rem] max-w-md grid-cols-3 items-center px-6">
-              {[NAV[0], null, NAV[1]].map((item) =>
+            <div className="mx-auto grid h-[4.35rem] max-w-md grid-cols-5 items-center px-2">
+              {[NAV[0], NAV[1], null, NAV[2], NAV[3]].map((item) =>
                 item ? (
                   <Link
                     key={item.href}

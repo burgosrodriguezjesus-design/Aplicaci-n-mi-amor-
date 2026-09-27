@@ -32,7 +32,8 @@
     "test:aislamiento": "node tests/e2e/aislamiento.mjs",
     "test:completar-esquema": "tsx tests/unit/completar-esquema.mts",
     "test:voz": "tsx tests/unit/voz.mts",
-    "test:examen": "tsx tests/unit/examen.mts"
+    "test:examen": "tsx tests/unit/examen.mts",
+    "test:chat": "node tests/e2e/chat.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
