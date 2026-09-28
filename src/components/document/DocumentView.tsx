@@ -320,14 +320,20 @@ export function DocumentView({ documentId }: { documentId: string }) {
                 </span>
               ) : null}
             </div>
-            <Link
-              href={`/preguntar?doc=${documentId}`}
-              className="btn btn-soft btn-sm mt-3"
-              aria-label="Preguntar a alicIA sobre este documento"
-            >
-              <Icon name="sparkles" size={15} />
-              Preguntar a alicIA
-            </Link>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link
+                href={`/preguntar?doc=${documentId}`}
+                className="btn btn-soft btn-sm"
+                aria-label="Preguntar a alicIA sobre este documento"
+              >
+                <Icon name="sparkles" size={15} />
+                Preguntar a alicIA
+              </Link>
+              <Link href={`/repasar?doc=${documentId}`} className="btn btn-soft btn-sm" aria-label="Repasar este documento con tarjetas">
+                <Icon name="mind" size={15} />
+                Repasar con tarjetas
+              </Link>
+            </div>
           </div>
         </div>
       </header>

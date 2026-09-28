@@ -496,6 +496,51 @@ seccion("6b. Pregúntale a alicIA: responde sobre el PDF sin activar nada");
   await page.getByRole("button", { name: /Nueva conversación/ }).click();
 }
 
+/* ── 6c. Repasar con tarjetas ──────────────────────────────────── */
+seccion("6c. Repasar: tarjetas con repaso espaciado");
+{
+  await page.goto(BASE + "/repasar");
+  await page.getByRole("heading", { name: "Repasar" }).waitFor();
+  const tarjeta = page.locator("[data-tarjeta]");
+  await tarjeta.waitFor({ timeout: 15_000 });
+  comprobar("se crean solas las tarjetas del PDF", (await page.locator("[data-frente]").textContent())?.trim().length > 3);
+  const total = Number(((await page.getByText(/^0\/\d+$/).textContent()) ?? "0/0").split("/")[1]);
+  comprobar("hay un repaso para hoy", total >= 5, `${total} tarjetas`);
+  comprobar("la respuesta no se ve hasta girarla", (await page.getByRole("button", { name: /Me la sé/ }).count()) === 0);
+  await page.getByRole("button", { name: "Mostrar respuesta" }).click();
+  await page.getByRole("button", { name: /Me la sé/ }).waitFor();
+  comprobar("al girarla aparece la respuesta del temario", ((await page.locator("[data-reverso]").textContent()) ?? "").length > 3);
+  comprobar("cada botón dice cuándo vuelve la tarjeta", /10 min/.test((await page.getByRole("button", { name: /No me la sé/ }).textContent()) ?? "") && /2 días/.test((await page.getByRole("button", { name: /Me la sé/ }).textContent()) ?? ""));
+  // La primera, fallada: vuelve en esta misma sesión.
+  const primera = await tarjeta.getAttribute("data-tarjeta");
+  await page.getByRole("button", { name: /No me la sé/ }).click();
+  comprobar("la que no te sabes vuelve en la misma sesión", (await page.getByText(new RegExp(`^1\\/${total + 1}$`)).count()) === 1);
+  let vista = false;
+  for (let n = 0; n < total + 5; n++) {
+    if (!(await tarjeta.count())) break;
+    if ((await tarjeta.getAttribute("data-tarjeta")) === primera) vista = true;
+    await page.keyboard.press(" ");
+    await page.getByRole("button", { name: /Me la sé/ }).waitFor();
+    await page.keyboard.press("3");
+  }
+  comprobar("con el teclado: espacio para girar y 3 para «me la sé»", true);
+  comprobar("y efectivamente volvió", vista);
+  await page.locator("[data-repaso-terminado]").waitFor({ timeout: 10_000 });
+  comprobar("al acabar, resumen del repaso", await page.getByText("¡Repaso terminado!").isVisible());
+  await page.reload();
+  await page.locator("[data-repaso-terminado]").waitFor({ timeout: 15_000 });
+  comprobar("y al volver: al día (lo repasado ya no vuelve hoy)", await page.getByText("¡Estás al día!").isVisible());
+  comprobar("dice cuándo es el próximo repaso", (await page.getByText(/próximo repaso es/).count()) === 1);
+  await sinDesborde(page, "repasar");
+  await page.goto(BASE + "/inicio");
+  await page.locator("[data-repaso-de-hoy]").waitFor({ timeout: 15_000 });
+  comprobar("Inicio muestra el repaso de hoy", /Estás al día|para repasar/.test((await page.locator("[data-repaso-de-hoy]").textContent()) ?? ""));
+  await page.goto(`${BASE}/documento/${docId}`);
+  await page.getByRole("link", { name: /Repasar este documento/ }).click();
+  await page.waitForURL(/\/repasar\?doc=/);
+  comprobar("desde el documento se repasa solo ese documento", true);
+}
+
 /* ── 7. Ajustes ────────────────────────────────────────────────── */
 seccion("7. Ajustes");
 {
@@ -543,7 +588,7 @@ seccion("7. Ajustes");
 seccion("8. Todas las pantallas en móvil pequeño, móvil, tableta y ordenador, en claro y oscuro");
 {
   const estado = await contexto.storageState();
-  const rutas = ["/inicio", "/biblioteca", "/subir", "/preguntar", "/ajustes", `/documento/${docId}?tab=summary`, `/documento/${docId}?tab=outline`, `/documento/${docId}?tab=exam`, `/documento/${docId}?tab=audio`, `/documento/${docId}?tab=pdf`];
+  const rutas = ["/inicio", "/biblioteca", "/subir", "/preguntar", "/repasar", "/ajustes", `/documento/${docId}?tab=summary`, `/documento/${docId}?tab=outline`, `/documento/${docId}?tab=exam`, `/documento/${docId}?tab=audio`, `/documento/${docId}?tab=pdf`];
   for (const [nombre, ancho, alto] of [["320", 320, 640], ["390", 390, 844], ["768", 768, 1024], ["1440", 1440, 900]]) {
     for (const esquema of ["light", "dark"]) {
       const v = await nuevaPagina({ viewport: { width: ancho, height: alto }, isMobile: ancho < 700, colorScheme: esquema, storageState: estado });

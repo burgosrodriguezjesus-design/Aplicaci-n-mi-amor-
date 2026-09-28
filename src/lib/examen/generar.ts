@@ -160,9 +160,9 @@ const UNIDAD = "(?:\\s?%|\\s?€|\\s(?:euros|d[ií]as|meses|años|horas|minutos|
 const CIFRA_RE = new RegExp(`(?<![\\w.,])(\\d{1,3}(?:\\.\\d{3})+|\\d+(?:,\\d+)?)(${UNIDAD})?(?![\\w])`, "g");
 const PALABRA_RE = new RegExp(`\\b(${[...PALABRAS_NUMERO.slice(1), ...DECENAS].join("|")})\\b`, "gi");
 
-type Hueco = { texto: string; hueco: string; tipo: "palabra" | "porcentaje" | "cifra"; valor: number; unidad: string };
+export type Hueco = { texto: string; hueco: string; tipo: "palabra" | "porcentaje" | "cifra"; valor: number; unidad: string };
 
-function huecos(frase: string): Hueco[] {
+export function huecos(frase: string): Hueco[] {
   const salida: Hueco[] = [];
   for (const m of frase.matchAll(CIFRA_RE)) {
     const valor = Number(m[1].replace(/\./g, "").replace(",", "."));

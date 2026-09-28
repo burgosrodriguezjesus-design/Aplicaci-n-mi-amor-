@@ -34,7 +34,8 @@
     "test:voz": "tsx tests/unit/voz.mts",
     "test:examen": "tsx tests/unit/examen.mts",
     "test:chat": "node tests/e2e/chat.mjs",
-    "test:preguntas": "tsx tests/unit/preguntas.mts"
+    "test:preguntas": "tsx tests/unit/preguntas.mts",
+    "test:tarjetas": "tsx tests/unit/tarjetas.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

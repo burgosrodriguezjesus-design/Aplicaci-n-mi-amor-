@@ -59,7 +59,7 @@ function StatTile({
         <p className="truncate text-[1.15rem] font-extrabold leading-tight tracking-tight tabular-nums sm:text-[1.3rem]">
           {value}
         </p>
-        <p className="mt-0.5 truncate text-[0.76rem] font-medium" style={{ color: "var(--text-muted)" }}>
+        <p className="mt-0.5 text-[0.76rem] font-medium leading-snug" style={{ color: "var(--text-muted)" }}>
           {label}
         </p>
       </div>
@@ -169,6 +169,45 @@ function Hero({ stats }: { stats: Stats }) {
   );
 }
 
+type ResumenRepaso = { totales: { pendientes: number; nuevas: number; aprendidas: number; total: number } };
+
+/** «Repaso de hoy»: lo que toca repasar con las tarjetas (repaso espaciado). */
+function RepasoDeHoy() {
+  const [datos, setDatos] = useState<ResumenRepaso["totales"] | null>(null);
+  useEffect(() => {
+    api
+      .get<ResumenRepaso>("/api/tarjetas?solo=resumen")
+      .then((r) => setDatos(r.totales))
+      .catch(() => undefined);
+  }, []);
+  if (!datos || !datos.total) return null;
+  const hoy = datos.pendientes + datos.nuevas;
+  return (
+    <Link
+      href="/repasar"
+      className="card group flex items-center gap-4 p-4 transition hover:shadow-md sm:p-5"
+      data-repaso-de-hoy
+    >
+      <span
+        className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white"
+        style={{ background: "linear-gradient(135deg, #10b981 0%, #0ea5e9 100%)", boxShadow: "0 12px 26px -14px rgba(14,165,233,0.9)" }}
+      >
+        <Icon name="mind" size={26} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="eyebrow">Repaso de hoy</span>
+        <span className="mt-0.5 block text-[1.05rem] font-extrabold leading-snug tracking-tight">
+          {hoy ? `${hoy} ${hoy === 1 ? "tarjeta" : "tarjetas"} para repasar` : "¡Estás al día!"}
+        </span>
+        <span className="mt-0.5 block text-[0.8rem]" style={{ color: "var(--text-muted)" }}>
+          {datos.aprendidas} de {datos.total} aprendidas{hoy ? ` · unos ${Math.max(1, Math.round(hoy * 0.25))} min` : ""}
+        </span>
+      </span>
+      <Icon name="chevronRight" size={20} className="shrink-0 transition group-hover:translate-x-0.5" />
+    </Link>
+  );
+}
+
 export function Dashboard() {
   const { user } = useSession();
   const [stats, setStats] = useState<Stats | null>(null);
@@ -213,6 +252,7 @@ export function Dashboard() {
         <div className="min-w-0 space-y-8">
           {loading && !stats ? <Skeleton className="h-52 w-full !rounded-[var(--radius-card)]" /> : null}
           {stats ? <Hero stats={stats} /> : null}
+          <RepasoDeHoy />
 
           {/* Cifras de la semana */}
           <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">

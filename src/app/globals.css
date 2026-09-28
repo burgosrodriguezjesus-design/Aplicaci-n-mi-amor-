@@ -1073,3 +1073,29 @@ input[type="range"].scrubber::-moz-range-thumb {
 .prose-study.chat-respuesta > :last-child {
   margin-bottom: 0;
 }
+
+/* Tarjetas de memoria: se giran para mostrar la respuesta. */
+.tarjeta-3d {
+  perspective: 1400px;
+}
+.tarjeta-interior {
+  display: grid;
+  transition: transform 520ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  transform-style: preserve-3d;
+}
+.tarjeta-interior.girada {
+  transform: rotateY(180deg);
+}
+.tarjeta-cara {
+  grid-area: 1 / 1;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.tarjeta-atras {
+  transform: rotateY(180deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tarjeta-interior {
+    transition: none;
+  }
+}

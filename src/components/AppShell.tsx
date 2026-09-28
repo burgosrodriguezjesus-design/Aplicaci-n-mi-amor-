@@ -28,6 +28,7 @@ const NAV = [
   { href: "/inicio", label: "Inicio", icon: "home" },
   { href: "/biblioteca", label: "Biblioteca", icon: "library" },
   { href: "/preguntar", label: "Preguntar", icon: "sparkles" },
+  { href: "/repasar", label: "Repasar", icon: "mind" },
   { href: "/ajustes", label: "Ajustes", icon: "settings" },
 ];
 
@@ -192,7 +193,7 @@ export function AppShell({
             </main>
           </div>
 
-          {/* Navegación inferior (móvil): Inicio · Biblioteca · Subir · Preguntar · Ajustes */}
+          {/* Navegación inferior (móvil): Inicio · Biblioteca · Subir · Preguntar · Repasar (Ajustes, arriba) */}
           <nav
             className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t md:hidden"
             style={{ background: "var(--glass)", backdropFilter: "saturate(180%) blur(18px)" }}

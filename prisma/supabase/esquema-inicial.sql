@@ -198,6 +198,25 @@ CREATE TABLE "Exam" (
 );
 
 -- CreateTable
+CREATE TABLE "CardReview" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "documentId" TEXT NOT NULL,
+    "cardKey" TEXT NOT NULL,
+    "interval" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "ease" DOUBLE PRECISION NOT NULL DEFAULT 2.5,
+    "reps" INTEGER NOT NULL DEFAULT 0,
+    "lapses" INTEGER NOT NULL DEFAULT 0,
+    "due" TIMESTAMP(3) NOT NULL,
+    "lastGrade" INTEGER NOT NULL DEFAULT 0,
+    "reviewCount" INTEGER NOT NULL DEFAULT 0,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "CardReview_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "AudioTrack" (
     "id" TEXT NOT NULL,
     "documentId" TEXT NOT NULL,
@@ -329,6 +348,12 @@ CREATE INDEX "Outline_documentId_isCurrent_idx" ON "Outline"("documentId", "isCu
 CREATE INDEX "Exam_documentId_isCurrent_idx" ON "Exam"("documentId", "isCurrent");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "CardReview_userId_documentId_cardKey_key" ON "CardReview"("userId", "documentId", "cardKey");
+
+-- CreateIndex
+CREATE INDEX "CardReview_userId_due_idx" ON "CardReview"("userId", "due");
+
+-- CreateIndex
 CREATE INDEX "AudioTrack_documentId_position_idx" ON "AudioTrack"("documentId", "position");
 
 -- CreateIndex
@@ -381,6 +406,12 @@ ALTER TABLE "Outline" ADD CONSTRAINT "Outline_documentId_fkey" FOREIGN KEY ("doc
 
 -- AddForeignKey
 ALTER TABLE "Exam" ADD CONSTRAINT "Exam_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "Document"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CardReview" ADD CONSTRAINT "CardReview_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CardReview" ADD CONSTRAINT "CardReview_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "Document"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "AudioTrack" ADD CONSTRAINT "AudioTrack_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES "Document"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -420,7 +420,7 @@ export function responderSinIa(doc: Documento, pregunta: string, anteriores: str
 /* ── Sugerencias sacadas del propio documento ───────────────────── */
 
 /** "el stock de seguridad", "las existencias": el término con el artículo con que lo usa el documento. */
-function conArticulo(termino: string, frase: string) {
+export function conArticulo(termino: string, frase: string) {
   const escapado = termino.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const m = new RegExp(`\\b(el|la|los|las)\\s+${escapado}`, "i").exec(frase);
   const nombre = /^[A-ZÁÉÍÓÚ]{2,}/.test(termino) ? termino : termino.charAt(0).toLowerCase() + termino.slice(1);
